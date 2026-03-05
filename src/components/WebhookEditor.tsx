@@ -21,9 +21,45 @@ interface EditorProps {
 }
 
 export const WebhookEditor: React.FC<EditorProps> = ({ message, onChange, webhookUrl, setWebhookUrl, onSend, isSending, addLog, webhookData, editingMessageId, onCancelEdit, autoCorrectEnabled }) => {
+
+  const [loading, setLoading] = useState(false);
+  const [pingEveryone, setPingEveryone] = useState(false);
+
   const updateMessage = (updates: Partial<DiscordWebhookMessage>) => {
     onChange({ ...message, ...updates });
   };
+
+  // Handle Load button and Enter key
+  const handleLoad = async () => {
+    setLoading(true);
+    // Simulate loading delay (replace with actual logic if needed)
+    await new Promise((res) => setTimeout(res, 1200));
+    setLoading(false);
+    // Trigger webhook apply logic (simulate Enter)
+    // You may want to call a prop or function here
+    // For now, just call onSend if available
+    if (onSend) onSend();
+  };
+
+  const handleWebhookInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleLoad();
+    }
+  };
+
+  // Ping Everyone logic
+  React.useEffect(() => {
+    if (pingEveryone) {
+      if (!message.content?.includes('[Ping: @everyone]')) {
+        updateMessage({ content: `[Ping: @everyone]\n${message.content || ''}` });
+      }
+    } else {
+      if (message.content?.includes('[Ping: @everyone]')) {
+        updateMessage({ content: (message.content || '').replace(/^\[Ping: @everyone\]\n?/, '') });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pingEveryone]);
 
   const addEmbed = () => {
     const newEmbed: DiscordEmbed = {
@@ -166,13 +202,44 @@ export const WebhookEditor: React.FC<EditorProps> = ({ message, onChange, webhoo
         
         <div className="space-y-2">
           <label className="block font-medium text-zinc-700 dark:text-zinc-300">Webhook URL</label>
+          <div className="flex gap-2 items-center">
+            <input
+              type="text"
+              value={webhookUrl}
+              onChange={(e) => setWebhookUrl(e.target.value)}
+              onKeyDown={handleWebhookInputKeyDown}
+              placeholder="https://discord.com/api/webhooks/..."
+              className="flex-1 bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:text-white transition-all"
+            />
+            <button
+              type="button"
+              onClick={handleLoad}
+              disabled={loading}
+              className="relative flex items-center justify-center px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-md font-medium transition-colors min-w-[48px]"
+            >
+              {loading ? (
+                <span className="flex gap-1">
+                  <span className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                  <span className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                  <span className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                </span>
+              ) : (
+                'Load'
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Ping Everyone Checkbox */}
+        <div className="flex items-center gap-2 mt-2">
           <input
-            type="text"
-            value={webhookUrl}
-            onChange={(e) => setWebhookUrl(e.target.value)}
-            placeholder="https://discord.com/api/webhooks/..."
-            className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:text-white transition-all"
+            type="checkbox"
+            id="ping-everyone"
+            checked={pingEveryone}
+            onChange={e => setPingEveryone(e.target.checked)}
+            className="accent-cyan-600 w-4 h-4"
           />
+          <label htmlFor="ping-everyone" className="text-zinc-700 dark:text-zinc-300 text-sm select-none">Ping Everyone to announce</label>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
