@@ -21,6 +21,9 @@ interface EditorProps {
 }
 
 export const WebhookEditor: React.FC<EditorProps> = ({ message, onChange, webhookUrl, setWebhookUrl, onSend, isSending, addLog, webhookData, editingMessageId, onCancelEdit, autoCorrectEnabled }) => {
+  // TEST LABEL FOR RENDER CHECK
+  // REMOVE THIS AFTER CONFIRMING UI UPDATE
+  const testLabel = <div style={{background:'#ff0',color:'#000',padding:'4px',marginBottom:'8px',fontWeight:'bold'}}>TEST: WebhookEditor UI Updated</div>;
 
   const [loading, setLoading] = useState(false);
   const [pingEveryone, setPingEveryone] = useState(false);
@@ -174,6 +177,7 @@ export const WebhookEditor: React.FC<EditorProps> = ({ message, onChange, webhoo
 
   return (
     <div className="space-y-6 text-sm pb-20">
+      {testLabel}
       
       {/* Editing Banner */}
       {editingMessageId && (
