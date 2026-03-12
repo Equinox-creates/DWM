@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://equinox-creates.github.io/DWM-Tools/sitemap.xml
+Sitemap: https://equinox-creates.github.io/DWM/sitemap.xml
