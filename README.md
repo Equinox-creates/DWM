@@ -1,5 +1,5 @@
 <div align="center">
-<img width="1200" height="475" alt="EQNBanner" src="img/Banner.png" />
+<img width="1200" height="475" alt="EQNBanner" src="img/Banner 2.png" />
 </div>
 
 # DWM (Discord WeHook Manager [EQN] )
