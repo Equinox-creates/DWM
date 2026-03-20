@@ -8,7 +8,7 @@ import { LogPanel, LogEntry } from './components/LogPanel';
 import { TemplatesPanel } from './components/TemplatesPanel';
 import { AccountPanel } from './components/AccountPanel';
 import { DiscordWebhookMessage, DEFAULT_MESSAGE } from './types';
-import { Moon, Sun, Trash2, FileJson, Copy, Check, Layout, Code, Box, GitGraph, Plus, Settings, Terminal, FileText, User, Eye, EyeOff, X, Type, Webhook, Volume2, VolumeX, Menu, Layers, Send, ChevronDown } from 'lucide-react';
+import { Moon, Sun, Trash2, FileJson, Copy, Check, Layout, Code, Box, GitGraph, Plus, Settings, Terminal, FileText, User, Eye, EyeOff, X, Type, Webhook, Volume2, VolumeX, Menu, Layers, Send, ChevronDown, Maximize, Minimize } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/utils';
 import { Toaster } from 'sonner';
@@ -27,6 +27,7 @@ function App() {
   const [showMessageManager, setShowMessageManager] = useState(false);
   const [messageManagerTab, setMessageManagerTab] = useState<'stack' | 'edit'>('stack');
   const [showMobilePreview, setShowMobilePreview] = useState(false);
+  const [fullScreenPreview, setFullScreenPreview] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [showDeleteWebhookConfirm, setShowDeleteWebhookConfirm] = useState(false);
@@ -104,7 +105,7 @@ function App() {
           
           addLog(`Fetched webhook details: ${data.name}`, 'success');
         }
-      } catch (error) {
+      } catch {
         // Silently ignore fetch errors to prevent console spam and unhandled promise rejections
         // console.error("Failed to fetch webhook details", error);
       }
@@ -126,7 +127,7 @@ function App() {
   const checkLimits = (msg: DiscordWebhookMessage) => {
     let totalChars = 0;
     let exceeds = false;
-    let reasons: string[] = [];
+    const reasons: string[] = [];
 
     if (msg.content) totalChars += msg.content.length;
 
@@ -296,8 +297,6 @@ function App() {
     { id: 'logs', label: 'Logs', icon: Terminal },
     { id: 'account', label: 'Account', icon: User },
   ] as const;
-
-  const currentEditorMode = editorModes.find(m => m.id === activeTab) || editorModes[0];
 
   const [editMessageUrl, setEditMessageUrl] = useState('');
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
@@ -599,7 +598,7 @@ function App() {
               {editorModes.map(mode => (
                 <button
                   key={mode.id}
-                  onClick={() => { playButtonSound(); setActiveTab(mode.id as any); }}
+                  onClick={() => { playButtonSound(); setActiveTab(mode.id); }}
                   className={cn(
                     "px-3 py-1.5 text-xs font-medium rounded transition-all flex items-center gap-2",
                     activeTab === mode.id 
@@ -689,7 +688,7 @@ function App() {
              {editorModes.map(mode => (
                <button
                  key={mode.id}
-                 onClick={() => setActiveTab(mode.id as any)}
+                 onClick={() => setActiveTab(mode.id)}
                  className={cn(
                    "w-10 h-10 transition-all duration-200 flex items-center justify-center group relative rounded-lg",
                    activeTab === mode.id 
@@ -717,7 +716,7 @@ function App() {
            {tabs.map(tab => (
              <button
                key={tab.id}
-               onClick={() => setActiveTab(tab.id as any)}
+               onClick={() => setActiveTab(tab.id)}
                className={cn(
                  "w-10 h-10 transition-all duration-200 flex items-center justify-center group relative rounded-lg",
                  activeTab === tab.id 
@@ -812,20 +811,31 @@ function App() {
                 />
               )}
               {activeTab === 'account' && (
-                <AccountPanel />
+                <AccountPanel message={message} onChange={setMessage} />
               )}
             </div>
           </div>
 
           {/* Preview Column (Responsive) */}
           <div className={cn(
-            "fixed inset-0 z-[60] bg-[#121212] xl:static xl:block xl:w-[450px] border-l border-[#222] transition-transform duration-300 ease-in-out overflow-x-hidden overflow-y-auto shadow-[-10px_0_30px_rgba(0,0,0,0.5)]",
-            showMobilePreview ? "translate-x-0" : "translate-x-full xl:translate-x-0"
+            "bg-[#121212] border-l border-[#222] transition-all duration-300 ease-in-out overflow-x-hidden overflow-y-auto shadow-[-10px_0_30px_rgba(0,0,0,0.5)]",
+            fullScreenPreview 
+              ? "fixed inset-0 z-[100] w-full h-full" 
+              : "fixed inset-0 z-[60] xl:static xl:block xl:w-[450px]",
+            !fullScreenPreview && (showMobilePreview ? "translate-x-0" : "translate-x-full xl:translate-x-0"),
+            activeTab === 'account' && "hidden xl:hidden"
           )}>
              <div className="h-full p-4 flex flex-col bg-[#121212]">
                 <div className="flex items-center justify-between mb-4 xl:mb-4">
                     <h3 className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">Live Preview</h3>
                     <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => { playButtonSound(); setFullScreenPreview(!fullScreenPreview); }}
+                          className="p-1.5 text-zinc-400 hover:text-white hover:bg-[#222] rounded transition-colors"
+                          title={fullScreenPreview ? "Exit Full Screen" : "Full Screen"}
+                        >
+                          {fullScreenPreview ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+                        </button>
                         <button
                           onClick={() => { playButtonSound(); setDarkMode(!darkMode); }}
                           className="p-1.5 text-zinc-400 hover:text-white hover:bg-[#222] rounded transition-colors"
@@ -833,7 +843,11 @@ function App() {
                           {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
                         </button>
                         <button 
-                            onClick={() => { playButtonSound(); setShowMobilePreview(false); }} 
+                            onClick={() => { 
+                              playButtonSound(); 
+                              setShowMobilePreview(false); 
+                              setFullScreenPreview(false);
+                            }} 
                             className="xl:hidden p-1.5 hover:bg-[#222] rounded text-zinc-400 hover:text-white transition-colors"
                         >
                             <X className="w-4 h-4" />
@@ -896,7 +910,7 @@ function App() {
                 {editorModes.map(mode => (
                   <button
                     key={mode.id}
-                    onClick={() => { setActiveTab(mode.id as any); setShowMobileMenu(false); }}
+                    onClick={() => { setActiveTab(mode.id); setShowMobileMenu(false); }}
                     className={cn(
                       "flex flex-col items-center justify-center p-3 rounded-xl transition-colors",
                       activeTab === mode.id ? "bg-cyan-50 dark:bg-cyan-900/20 text-cyan-500" : "bg-zinc-50 dark:bg-zinc-900 text-zinc-500"

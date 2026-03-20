@@ -414,7 +414,9 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({ value, onCha
                 className="bg-[#121212] border border-[#333] rounded-xl shadow-2xl w-full max-w-[600px] flex flex-col overflow-hidden"
               >
               <div className="flex items-center justify-between p-4 border-b border-[#333] bg-[#1a1a1a]">
-                <h3 className="font-bold text-sm text-white">Select Date & Time</h3>
+                <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                  <CalendarIcon className="w-4 h-4 text-cyan-500" /> Date & Time Studio
+                </h3>
                 <button 
                   onClick={() => setIsOpen(false)}
                   className="p-1 hover:bg-[#222] text-zinc-400 hover:text-white rounded-md transition-colors"
@@ -425,6 +427,44 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({ value, onCha
 
               <div className="flex flex-col sm:flex-row gap-5 p-5 max-h-[80vh] overflow-y-auto custom-scrollbar">
                 <div className="flex flex-col">
+                  {/* Presets */}
+                  <div className="flex gap-2 mb-4">
+                    <button
+                      onClick={() => {
+                        const now = new Date();
+                        const h = now.getHours().toString().padStart(2, '0');
+                        const m = now.getMinutes().toString().padStart(2, '0');
+                        setSelectedDate(now);
+                        setTimeString(`${h}:${m}`);
+                        updateValue(now, `${h}:${m}`);
+                      }}
+                      className="flex-1 py-1.5 bg-[#222] hover:bg-[#333] text-xs font-bold text-white rounded transition-colors"
+                    >
+                      Now
+                    </button>
+                    <button
+                      onClick={() => {
+                        const tomorrow = new Date();
+                        tomorrow.setDate(tomorrow.getDate() + 1);
+                        setSelectedDate(tomorrow);
+                        updateValue(tomorrow, timeString);
+                      }}
+                      className="flex-1 py-1.5 bg-[#222] hover:bg-[#333] text-xs font-bold text-white rounded transition-colors"
+                    >
+                      Tomorrow
+                    </button>
+                    <button
+                      onClick={() => {
+                        const nextWeek = new Date();
+                        nextWeek.setDate(nextWeek.getDate() + 7);
+                        setSelectedDate(nextWeek);
+                        updateValue(nextWeek, timeString);
+                      }}
+                      className="flex-1 py-1.5 bg-[#222] hover:bg-[#333] text-xs font-bold text-white rounded transition-colors"
+                    >
+                      Next Week
+                    </button>
+                  </div>
                   <DayPicker
                   mode="single"
                   selected={selectedDate}

@@ -25,6 +25,7 @@ interface EditorProps {
 export const WebhookEditor: React.FC<EditorProps> = ({ message, onChange, webhookUrl, setWebhookUrl, onSend, isSending, addLog, webhookData, editingMessageId, onCancelEdit, autoCorrectEnabled, spellCheckEnabled }) => {
   const [isLoadingWebhook, setIsLoadingWebhook] = useState(false);
   const [pingEveryone, setPingEveryone] = useState(false);
+  const [pingType, setPingType] = useState<'@everyone' | '@here'>('@everyone');
   const [showInvalidUrlModal, setShowInvalidUrlModal] = useState(false);
 
   const handleLoadWebhook = async () => {
@@ -57,15 +58,24 @@ export const WebhookEditor: React.FC<EditorProps> = ({ message, onChange, webhoo
     const checked = e.target.checked;
     setPingEveryone(checked);
     if (checked) {
-      if (!message.content?.includes('[Ping: @everyone]')) {
-        updateMessage({ content: `[Ping: @everyone]\n${message.content || ''}` });
+      if (!message.content?.includes(pingType)) {
+        updateMessage({ content: `${pingType}\n${message.content || ''}` });
       }
     } else {
-      if (message.content?.includes('[Ping: @everyone]\n')) {
-        updateMessage({ content: message.content.replace('[Ping: @everyone]\n', '') });
-      } else if (message.content?.includes('[Ping: @everyone]')) {
-        updateMessage({ content: message.content.replace('[Ping: @everyone]', '') });
-      }
+      let newContent = message.content || '';
+      newContent = newContent.replace(`@everyone\n`, '').replace(`@everyone`, '');
+      newContent = newContent.replace(`@here\n`, '').replace(`@here`, '');
+      updateMessage({ content: newContent });
+    }
+  };
+
+  const handlePingTypeChange = (newType: '@everyone' | '@here') => {
+    setPingType(newType);
+    if (pingEveryone) {
+      let newContent = message.content || '';
+      newContent = newContent.replace(`@everyone`, newType);
+      newContent = newContent.replace(`@here`, newType);
+      updateMessage({ content: newContent });
     }
   };
 
@@ -291,8 +301,8 @@ export const WebhookEditor: React.FC<EditorProps> = ({ message, onChange, webhoo
           <h2 className="text-lg font-semibold text-zinc-100 flex items-center gap-2">
             <Type className="w-5 h-5" /> Message Content
           </h2>
-          <label className="flex items-center gap-3 text-sm font-medium text-zinc-400 cursor-pointer group">
-            <div className="relative">
+          <div className="flex items-center gap-3 text-sm font-medium text-zinc-400 group">
+            <label className="relative cursor-pointer">
               <input 
                 type="checkbox" 
                 checked={pingEveryone}
@@ -300,9 +310,21 @@ export const WebhookEditor: React.FC<EditorProps> = ({ message, onChange, webhoo
                 className="sr-only peer"
               />
               <div className="w-10 h-5 bg-[#333] peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-cyan-500 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-500"></div>
-            </div>
-            <span className="group-hover:text-white transition-colors">Ping Everyone to announce</span>
-          </label>
+            </label>
+            <span className="flex items-center gap-1.5 group-hover:text-white transition-colors">
+              Ping 
+              <CustomSelect 
+                value={pingType}
+                onChange={(val) => handlePingTypeChange(val as '@everyone' | '@here')}
+                options={[
+                  { value: '@everyone', label: '@everyone' },
+                  { value: '@here', label: '@here' }
+                ]}
+                className="w-32"
+              />
+              to announce
+            </span>
+          </div>
         </div>
         <textarea
           value={message.content || ''}

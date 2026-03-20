@@ -4,7 +4,7 @@ import { Plus, Trash2, Undo, Redo, ChevronDown, ChevronRight, MessageSquare, Lay
 import { playButtonSound, playDeleteSound } from '@/utils/sounds';
 import { intToHex, hexToInt } from '@/utils';
 import { CustomColorPicker, CustomDatePicker } from './ui/CustomInputs';
-import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
+import { DragDropContext, Droppable, Draggable, DraggableProvidedDragHandleProps } from '@hello-pangea/dnd';
 
 interface BlockEditorProps {
   message: DiscordWebhookMessage;
@@ -53,7 +53,7 @@ interface ScratchBlockProps {
   children?: React.ReactNode;
   onRemove?: () => void;
   isCBlock?: boolean;
-  dragHandleProps?: any;
+  dragHandleProps?: DraggableProvidedDragHandleProps | null;
 }
 
 const ScratchBlock = ({ color, title, children, onRemove, isCBlock = false, dragHandleProps }: ScratchBlockProps) => {
@@ -87,7 +87,7 @@ const ScratchBlock = ({ color, title, children, onRemove, isCBlock = false, drag
   );
 };
 
-const EmbedBlock = ({ embed, index, message, onChange, dragHandleProps, visibleBlocks, setVisibleBlocks }: { embed: DiscordEmbed, index: number, message: DiscordWebhookMessage, onChange: (updates: Partial<DiscordWebhookMessage>) => void, dragHandleProps?: any, visibleBlocks: Set<string>, setVisibleBlocks: React.Dispatch<React.SetStateAction<Set<string>>> }) => {
+const EmbedBlock = ({ embed, index, message, onChange, dragHandleProps, visibleBlocks, setVisibleBlocks }: { embed: DiscordEmbed, index: number, message: DiscordWebhookMessage, onChange: (updates: Partial<DiscordWebhookMessage>) => void, dragHandleProps?: DraggableProvidedDragHandleProps | null, visibleBlocks: Set<string>, setVisibleBlocks: React.Dispatch<React.SetStateAction<Set<string>>> }) => {
   const [expanded, setExpanded] = useState(true);
 
   const updateEmbed = (updates: Partial<DiscordEmbed>) => {

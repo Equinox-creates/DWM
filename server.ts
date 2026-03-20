@@ -135,6 +135,7 @@ async function startServer() {
       const data = await response.json();
       res.json(data);
     } catch (error) {
+      console.error('Failed to fetch guilds:', error);
       res.status(500).json({ error: 'Failed to fetch guilds' });
     }
   });
@@ -149,6 +150,7 @@ async function startServer() {
       // which returns a single webhook in the token response.
       res.json({ error: 'Fetching all webhooks requires bot permissions. Use the webhook provided during OAuth.' });
     } catch (error) {
+      console.error('Failed to fetch webhooks:', error);
       res.status(500).json({ error: 'Failed to fetch webhooks' });
     }
   });
