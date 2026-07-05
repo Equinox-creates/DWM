@@ -1,5 +1,8 @@
 {
   "name": "DisCord WebHook Manager [EQN]",
   "description": "A comprehensive Discord webhook manager with Visual, Code, Block, and Node editors.",
-  "requestFramePermissions": []
+  "requestFramePermissions": ["microphone", "camera", "geolocation"],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }
