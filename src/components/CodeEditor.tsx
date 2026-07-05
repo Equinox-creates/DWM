@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { DiscordWebhookMessage } from '@/types';
 import Editor, { OnMount } from '@monaco-editor/react';
+import * as monaco from '@monaco-editor/react';
 import { AlertCircle, Check, Copy, Undo, Redo, Search, X, ChevronUp, ChevronDown, Replace, ChevronRight, ChevronLeft, HelpCircle } from 'lucide-react';
 import { toast } from '../utils/toast';
 import { playButtonSound } from '@/utils/sounds';
-import * as monaco from 'monaco-editor';
 import { DocumentationModal } from './DocumentationModal';
 
 interface CodeEditorProps {
@@ -23,15 +23,15 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ message, onChange, onUnd
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   // Search/Replace State
-  const [editorInstance, setEditorInstance] = useState<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const [editorInstance, setEditorInstance] = useState<any>(null);
   const [showSearchPanel, setShowSearchPanel] = useState(false);
   const [panelWidth, setPanelWidth] = useState(256);
   const [isDragging, setIsDragging] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [replaceQuery, setReplaceQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<monaco.editor.FindMatch[]>([]);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
-  const decorationsRef = useRef<monaco.editor.IEditorDecorationsCollection | null>(null);
+  const decorationsRef = useRef<any>(null);
 
   useEffect(() => {
     if (!isDragging) return;
@@ -127,7 +127,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ message, onChange, onUnd
       return; // Will re-run with new index
     }
     
-    const newDecorations = matches.map((match, i) => ({
+    const newDecorations = matches.map((match: any, i: number) => ({
       range: match.range,
       options: {
         inlineClassName: i === validIndex ? 'bg-yellow-500/60 dark:bg-yellow-500/50' : 'bg-yellow-500/30 dark:bg-yellow-500/20',
@@ -165,7 +165,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ message, onChange, onUnd
   const handleReplaceAll = () => {
     if (!editorInstance || searchResults.length === 0) return;
     
-    const edits = searchResults.map(match => ({
+    const edits = searchResults.map((match: any) => ({
       range: match.range,
       text: replaceQuery,
       forceMoveMarkers: true
@@ -186,12 +186,12 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ message, onChange, onUnd
         </div>
         <div className="flex items-center gap-2">
            {onUndo && (
-             <button onClick={() => { playButtonSound(); onUndo(); }} disabled={!canUndo} className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white p-1 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors disabled:opacity-30">
+             <button onClick={() => { playButtonSound(); onUndo(); }} disabled={!canUndo} className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white p-1 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
                <Undo className="w-3 h-3" />
              </button>
            )}
            {onRedo && (
-             <button onClick={() => { playButtonSound(); onRedo(); }} disabled={!canRedo} className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white p-1 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors disabled:opacity-30">
+             <button onClick={() => { playButtonSound(); onRedo(); }} disabled={!canRedo} className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white p-1 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
                <Redo className="w-3 h-3" />
              </button>
            )}
@@ -233,7 +233,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ message, onChange, onUnd
       <div className="flex-1 overflow-hidden flex flex-row relative">
         {!showSearchPanel && (
           <div 
-            className="absolute left-0 top-1/2 -translate-y-1/2 z-20 cursor-pointer bg-zinc-200 dark:bg-zinc-700 hover:bg-zinc-300 dark:hover:bg-zinc-600 rounded-r border border-l-0 border-zinc-300 dark:border-zinc-600 p-0.5 shadow-md flex items-center justify-center opacity-50 hover:opacity-100 transition-opacity"
+            className="absolute left-0 top-1/2 -translate-y-1/2 z-20 cursor-pointer bg-zinc-200 dark:bg-zinc-700 hover:bg-zinc-300 dark:hover:bg-zinc-600 rounded-r border border-l-0 border-zinc-300 dark:border-zinc-700"
             onClick={() => setShowSearchPanel(true)}
             title="Open Search Panel"
           >
@@ -257,7 +257,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ message, onChange, onUnd
             
             <div className="p-3 space-y-3">
               <div className="space-y-1">
-                <div className="flex items-center bg-white dark:bg-[#3c3c3c] border border-zinc-300 dark:border-transparent rounded overflow-hidden focus-within:border-cyan-500 dark:focus-within:border-cyan-500/50">
+                <div className="flex items-center bg-white dark:bg-[#3c3c3c] border border-zinc-300 dark:border-transparent rounded overflow-hidden focus-within:border-cyan-500 dark:focus-within:border-cyan-500">
                   <div className="pl-2 pr-1 text-zinc-400">
                     <Search className="w-3.5 h-3.5" />
                   </div>
@@ -291,7 +291,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ message, onChange, onUnd
               </div>
 
               <div className="space-y-1">
-                <div className="flex items-center bg-white dark:bg-[#3c3c3c] border border-zinc-300 dark:border-transparent rounded overflow-hidden focus-within:border-cyan-500 dark:focus-within:border-cyan-500/50">
+                <div className="flex items-center bg-white dark:bg-[#3c3c3c] border border-zinc-300 dark:border-transparent rounded overflow-hidden focus-within:border-cyan-500 dark:focus-within:border-cyan-500">
                   <div className="pl-2 pr-1 text-zinc-400">
                     <Replace className="w-3.5 h-3.5" />
                   </div>
@@ -334,7 +334,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ message, onChange, onUnd
               }}
             >
               <div 
-                className="absolute left-1/2 top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-8 bg-zinc-300 dark:bg-zinc-600 rounded opacity-0 group-hover:opacity-100 flex items-center justify-center shadow-sm"
+                className="absolute left-1/2 top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-8 bg-zinc-300 dark:bg-zinc-600 rounded opacity-0 group-hover:opacity-100 flex items-center justify-center"
                 onClick={(e) => { e.stopPropagation(); setShowSearchPanel(false); }}
                 title="Close Panel"
                 style={{ cursor: 'pointer' }}
