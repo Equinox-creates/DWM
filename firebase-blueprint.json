@@ -1,0 +1,85 @@
+{
+  "entities": {
+    "Template": {
+      "title": "Template",
+      "description": "Discord webhook layout templates shared in the community or saved in a user account.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "The title or name of this template." },
+        "description": { "type": "string", "description": "A short overview of what this layout does." },
+        "author": { "type": "string", "description": "Display name of the author." },
+        "authorId": { "type": "string", "description": "The creator or authorized editor of this template." },
+        "message": { "type": "object", "description": "The actual message content structured as JSON." },
+        "isPublic": { "type": "boolean", "description": "True if displayed in public templates section." },
+        "downloads": { "type": "number", "description": "Count of times this layout has been cloned." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp." },
+        "likes": { "type": "number", "description": "Total count of positive reactions." },
+        "dislikes": { "type": "number", "description": "Total count of negative reactions." },
+        "likedBy": { "type": "array", "description": "List of user IDs who liked this template." },
+        "dislikedBy": { "type": "array", "description": "List of user IDs who disliked this template." },
+        "thumbnail": { "type": "string", "description": "Image URL for template cards." },
+        "thumbnailPoster": { "type": "string", "description": "Discord username who submitted the widescreen thumbnail." },
+        "category": { "type": "string", "description": "Category folder label." }
+      },
+      "required": ["name", "author", "authorId", "message", "isPublic"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "Real-time alerts sent to users regarding community feedback.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Subject of the message." },
+        "message": { "type": "string", "description": "Body details." },
+        "type": { "type": "string", "enum": ["info", "success", "warning", "error"] },
+        "actionUrl": { "type": "string", "description": "Click redirect endpoint." },
+        "recipientId": { "type": "string", "description": "Recipient UID to isolate inbox." },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "message", "recipientId"]
+    },
+    "ReactionRole": {
+      "title": "ReactionRole",
+      "description": "Binding mappings of Discord message reaction clicks to automated roles assignments.",
+      "type": "object",
+      "properties": {
+        "roleId": { "type": "string" },
+        "emoji": { "type": "string" },
+        "messageId": { "type": "string" },
+        "channelId": { "type": "string" }
+      },
+      "required": ["roleId", "emoji", "messageId", "channelId"]
+    },
+    "DiscordMedia": {
+      "title": "DiscordMedia",
+      "description": "Cached widescreen 16:9 images uploaded by Discord guild members.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "url": { "type": "string" },
+        "creator": { "type": "string" },
+        "creatorAvatar": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "url", "creator"]
+    }
+  },
+  "firestore": {
+    "/templates/{templateId}": {
+      "schema": "Template",
+      "description": "Store all individual user and shared templates."
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "Store live inbox notifications."
+    },
+    "/reaction_roles/{roleId}": {
+      "schema": "ReactionRole",
+      "description": "Reaction role bindings data."
+    },
+    "/discord_media/{mediaId}": {
+      "schema": "DiscordMedia",
+      "description": "Store and serve submitted widescreen 16:9 thumbnails."
+    }
+  }
+}
