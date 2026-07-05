@@ -32,3 +32,208 @@ body {
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
 }
+
+/* Glassy Toast Stylings */
+[data-sonner-toast] {
+  backdrop-filter: blur(40px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
+  background-color: rgba(0, 0, 0, 0.45) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  border-radius: 1rem !important;
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Hide scrollbars class */
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+}
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
+/* React DayPicker styling matching the elegant circular Dark Calendars */
+.rdp {
+  --rdp-color-brand: #1463e2 !important; /* Premium active blue matching the picker image */
+  --rdp-accent-color: #1463e2 !important;
+  --rdp-color-brand-text: #ffffff !important;
+  --rdp-background-color: #11141e !important; /* Deep exquisite navy slate background from image */
+  display: flex !important;
+  justify-content: center !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 4px 0 !important;
+}
+
+.rdp-months {
+  display: flex !important;
+  width: 100% !important;
+  justify-content: center !important;
+}
+
+.rdp-month {
+  width: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+}
+
+.rdp-month_grid {
+  width: 100% !important;
+  max-width: 290px !important;
+}
+
+.rdp-caption {
+  display: none !important; /* Fully hide default caption to use our high-fidelity pixel-perfect Header */
+}
+
+.rdp-caption_label {
+  color: #ffffff !important;
+  font-family: "Inter", sans-serif !important;
+  font-weight: 700 !important;
+  font-size: 15px !important;
+  letter-spacing: -0.015em !important;
+}
+
+.rdp-nav {
+  display: flex !important;
+  gap: 8px !important;
+  align-items: center !important;
+}
+
+.rdp-nav_button {
+  color: #a1a1aa !important; /* zinc-400 */
+  background: rgba(255, 255, 255, 0.03) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 8px !important;
+  padding: 6px !important;
+  cursor: pointer !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 28px !important;
+  height: 28px !important;
+}
+
+.rdp-nav_button:hover {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+  color: #ffffff !important;
+}
+
+.rdp-nav_icon {
+  width: 14px !important;
+  height: 14px !important;
+  color: currentColor !important;
+}
+
+.rdp-head {
+  display: table-header-group !important;
+}
+
+.rdp-head_row {
+  display: table-row !important;
+}
+
+.rdp-head_cell {
+  text-align: center !important;
+  font-weight: 500 !important;
+  color: #5d6785 !important; /* Elegant gray slate blue matching week labels in image */
+  font-size: 11px !important;
+  padding: 4px 0 8px 0 !important;
+  width: 38px !important;
+  display: table-cell !important;
+  text-transform: capitalize !important;
+}
+
+.rdp-tbody {
+  display: table-row-group !important;
+}
+
+.rdp-row {
+  display: table-row !important;
+}
+
+.rdp-cell {
+  display: table-cell !important;
+  padding: 3px !important;
+  text-align: center !important;
+  vertical-align: middle !important;
+}
+
+/* Beautiful circular day button styling matching user image */
+.rdp-day {
+  width: 34px !important;
+  height: 34px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 9999px !important; /* EXPLICIT CIRCLES MATCHING IMAGE */
+  cursor: pointer !important;
+  color: #e4e4e7 !important; /* zinc-200 */
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  position: relative !important;
+}
+
+.rdp-day:hover:not(.rdp-day_selected) {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+  color: #ffffff !important;
+}
+
+/* Gorgeous circular selection highlight with glow matching image */
+.rdp-day_selected,
+body .rdp-day_selected {
+  background: #1463e2 !important; /* Elegant digital blue from image */
+  background-color: #1463e2 !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  border-radius: 9999px !important; /* Pure perfect circle */
+  box-shadow: 0 0 16px rgba(20, 99, 226, 0.7) !important; /* Premium electric core glow */
+}
+
+/* Current day indicators */
+.rdp-day_today {
+  border: 1px solid rgba(20, 99, 226, 0.55) !important;
+  color: #3b82f6 !important; /* active blue */
+  font-weight: 700 !important;
+}
+
+/* Shaded out days belonging to neighboring months matching image */
+.rdp-day_outside,
+.rdp-outside {
+  opacity: 0.12 !important;
+  color: #3e445b !important; /* very dark gray slate blue, fades elegantly into bg like image */
+}
+
+.rdp-day_outside:hover,
+.rdp-outside:hover {
+  opacity: 0.45 !important;
+}
+
+@media (max-width: 400px) {
+  .rdp-month_grid {
+    max-width: 250px !important;
+  }
+  .rdp-caption {
+    max-width: 240px !important;
+  }
+  .rdp-head_cell {
+    width: 32px !important;
+    font-size: 10px !important;
+  }
+  .rdp-cell {
+    padding: 1.5px !important;
+  }
+  .rdp-day {
+    width: 28px !important;
+    height: 28px !important;
+    font-size: 11px !important;
+  }
+}
+
+

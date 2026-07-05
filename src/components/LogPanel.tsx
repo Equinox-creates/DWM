@@ -22,8 +22,8 @@ export const LogPanel: React.FC<LogPanelProps> = ({ logs, onClear }) => {
   }, [logs]);
 
   return (
-    <div className="h-full flex flex-col bg-[#1e1e1e] text-zinc-300 font-mono text-xs rounded-xl overflow-hidden border border-zinc-800">
-      <div className="flex items-center justify-between px-4 py-2 bg-[#252526] border-b border-zinc-800">
+    <div className="h-full flex flex-col bg-transparent text-zinc-300 font-mono text-xs overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-white/5 bg-black/40 backdrop-blur-md">
         <div className="flex items-center gap-2">
           <Terminal className="w-4 h-4 text-zinc-400" />
           <span className="font-bold text-zinc-400 uppercase tracking-wider">Output / Logs</span>

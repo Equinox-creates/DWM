@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ReactFlow, Background, Controls, useNodesState, useEdgesState, addEdge, Connection, Edge, Node, Handle, Position, useReactFlow, ReactFlowProvider, NodeProps } from 'reactflow';
+import { ReactFlow, Background, Controls, MiniMap, useNodesState, useEdgesState, addEdge, Connection, Edge, Node, Handle, Position, useReactFlow, ReactFlowProvider, NodeProps } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { DiscordWebhookMessage, DiscordEmbed, DiscordEmbedField } from '@/types';
 import { intToHex, hexToInt } from '@/utils';
-import { Trash2, Scissors, Undo, Redo, Plus, ChevronDown } from 'lucide-react';
+import { Trash2, Scissors, Undo, Redo, Plus, ChevronDown, Magnet, MessageSquare, Type, FileText, LayoutTemplate, Link, ListPlus, File, HelpCircle } from 'lucide-react';
 import { playButtonSound, playDeleteSound } from '@/utils/sounds';
 import { CustomColorPicker } from './ui/CustomInputs';
+import { CustomDropdown } from './ui/CustomDropdown';
+import { DocumentationModal } from './DocumentationModal';
 
 // --- Custom Nodes ---
 
@@ -197,7 +199,10 @@ const NodeEditorContent: React.FC<NodeEditorProps> = ({ message, onChange }) => 
   const [history, setHistory] = useState<{nodes: Node[], edges: Edge[]}[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [cutMode, setCutMode] = useState(false);
+  const [snapToGrid, setSnapToGrid] = useState(true);
+  const [edgeType, setEdgeType] = useState<'default' | 'straight' | 'step' | 'smoothstep'>('smoothstep');
   const [showAddMenu, setShowAddMenu] = useState(false);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   // Snapshot helper
   const takeSnapshot = useCallback(() => {
@@ -557,26 +562,52 @@ const NodeEditorContent: React.FC<NodeEditorProps> = ({ message, onChange }) => 
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setShowAddMenu(false)} />
                 <div className="absolute top-full left-0 mt-1 w-48 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-xl z-20 py-1 overflow-hidden">
-                  <button onClick={() => addNode('stringNode', 'Text Node')} className="w-full text-left px-4 py-2 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-zinc-400" /> Text Node
+                  <button onClick={() => addNode('stringNode', 'Content Node')} className="w-full text-left px-4 py-2 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
+                    <MessageSquare className="w-3.5 h-3.5 text-blue-400" /> Content Node
+                  </button>
+                  <button onClick={() => addNode('stringNode', 'Title Node')} className="w-full text-left px-4 py-2 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
+                    <Type className="w-3.5 h-3.5 text-zinc-400" /> Title Node
+                  </button>
+                  <button onClick={() => addNode('stringNode', 'Description Node')} className="w-full text-left px-4 py-2 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
+                    <FileText className="w-3.5 h-3.5 text-zinc-400" /> Description Node
                   </button>
                   <button onClick={() => addNode('embedNode')} className="w-full text-left px-4 py-2 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-purple-500" /> Embed Node
-                  </button>
-                  <button onClick={() => addNode('stringNode', 'IMG Node')} className="w-full text-left px-4 py-2 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-pink-500" /> IMG Node
+                    <LayoutTemplate className="w-3.5 h-3.5 text-purple-500" /> Embed Node
                   </button>
                   <button onClick={() => addNode('stringNode', 'URL Node')} className="w-full text-left px-4 py-2 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-blue-500" /> URL Node
+                    <Link className="w-3.5 h-3.5 text-blue-500" /> URL Node
                   </button>
                   <button onClick={() => addNode('fieldNode')} className="w-full text-left px-4 py-2 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-green-500" /> Field Node
+                    <ListPlus className="w-3.5 h-3.5 text-green-500" /> Field Node
+                  </button>
+                  <button onClick={() => addNode('stringNode', 'File URL Node')} className="w-full text-left px-4 py-2 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
+                    <File className="w-3.5 h-3.5 text-yellow-500" /> File URL Node
                   </button>
                 </div>
               </>
             )}
         </div>
         <div className="flex gap-2 items-center">
+            <button 
+                onClick={() => { playButtonSound(); setSnapToGrid(!snapToGrid); }} 
+                className={`p-1.5 rounded transition-colors ${snapToGrid ? 'bg-cyan-600/20 text-cyan-500' : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'}`}
+                title="Snap to Grid"
+            >
+                <Magnet className="w-4 h-4" />
+            </button>
+            <div className="w-px h-4 bg-zinc-300 dark:bg-zinc-700 mx-1" />
+            <div className="w-32">
+                <CustomDropdown
+                    value={edgeType}
+                    onChange={(val) => { playButtonSound(); setEdgeType(val as any); }}
+                    options={[
+                        { value: "smoothstep", label: "Smooth" },
+                        { value: "default", label: "Bezier" },
+                        { value: "straight", label: "Straight" },
+                        { value: "step", label: "Step" }
+                    ]}
+                />
+            </div>
             <div className="w-px h-4 bg-zinc-300 dark:bg-zinc-700 mx-1" />
             <button 
                 onClick={() => { playButtonSound(); setCutMode(!cutMode); }} 
@@ -592,12 +623,20 @@ const NodeEditorContent: React.FC<NodeEditorProps> = ({ message, onChange }) => 
             <button onClick={redo} disabled={historyIndex >= history.length - 1} className="p-1.5 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded disabled:opacity-30">
                 <Redo className="w-4 h-4" />
             </button>
+            <div className="w-px h-4 bg-zinc-300 dark:bg-zinc-700 mx-1" />
+            <button 
+                onClick={() => { playButtonSound(); setIsHelpOpen(true); }}
+                className="p-1.5 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded"
+                title="Documentation"
+            >
+                <HelpCircle className="w-4 h-4 text-cyan-500" />
+            </button>
         </div>
       </div>
       <div className="flex-1">
         <ReactFlow
           nodes={nodes}
-          edges={edges}
+          edges={edges.map(edge => ({ ...edge, type: edgeType }))}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
@@ -605,14 +644,37 @@ const NodeEditorContent: React.FC<NodeEditorProps> = ({ message, onChange }) => 
           onNodeDragStop={onNodeDragStop}
           nodeTypes={nodeTypes}
           fitView
+          snapToGrid={snapToGrid}
+          snapGrid={[15, 15]}
+          defaultEdgeOptions={{ type: edgeType, style: { strokeWidth: 2.5, stroke: '#888' }, animated: true }}
           deleteKeyCode={['Backspace', 'Delete']}
           proOptions={{ hideAttribution: true }}
           className="bg-[#1a1a1a]"
         >
-          <Background color="#333" gap={24} size={2} className="opacity-50" />
+          <Background color="#333" gap={15} size={1} className="opacity-50" />
+          <MiniMap 
+            nodeColor={(node) => {
+              switch (node.type) {
+                case 'messageNode': return '#63c76a';
+                case 'stringNode': return '#5e81ac';
+                case 'embedNode': return '#a881e6';
+                case 'fieldNode': return '#ebcb8b';
+                default: return '#fff';
+              }
+            }}
+            maskColor="rgba(0,0,0,0.5)"
+            className="!bg-[#2d2d2d] !border !border-[#1a1a1a] !rounded-md !overflow-hidden"
+            nodeStrokeColor="rgba(255,255,255,0.1)"
+            nodeBorderRadius={4}
+          />
           <Controls className="!bg-[#2d2d2d] !border-[#1a1a1a] !shadow-2xl !rounded-md overflow-hidden [&>button]:!border-b [&>button]:!border-[#1a1a1a] [&>button]:!bg-[#2d2d2d] [&>button]:!fill-[#cccccc] hover:[&>button]:!bg-[#3d3d3d] hover:[&>button]:!fill-white transition-colors" />
         </ReactFlow>
       </div>
+      <DocumentationModal
+        isOpen={isHelpOpen}
+        onClose={() => setIsHelpOpen(false)}
+        editorType="node"
+      />
     </div>
   );
 };

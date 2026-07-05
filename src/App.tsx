@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { DiscordMobileChat } from './components/DiscordMobileChat';
+import { CinematicIntro } from './components/CinematicIntro';
 import { WebhookEditor } from './components/WebhookEditor';
 import { MessagePreview } from './components/MessagePreview';
 import { CodeEditor } from './components/CodeEditor';
@@ -7,16 +9,36 @@ import { BlockEditor } from './components/BlockEditor';
 import { LogPanel, LogEntry } from './components/LogPanel';
 import { TemplatesPanel } from './components/TemplatesPanel';
 import { AccountPanel } from './components/AccountPanel';
+import { CompanionBotPanel } from './components/CompanionBotPanel';
+import { MessageStackManager } from './components/MessageStackManager';
+import { TemplateCreator } from './components/TemplateCreator';
 import { DiscordWebhookMessage, DEFAULT_MESSAGE } from './types';
-import { Moon, Sun, Trash2, FileJson, Copy, Check, Layout, Code, Box, GitGraph, Plus, Settings, Terminal, FileText, User, Eye, EyeOff, X, Type, Webhook, Volume2, VolumeX, Menu, Layers, Send, ChevronDown, Maximize, Minimize } from 'lucide-react';
+import { Moon, Sun, Trash2, FileJson, Copy, Check, Layout, Code, Box, GitGraph, Plus, Settings, Terminal, FileText, User, Eye, EyeOff, X, Type, Webhook, Volume2, VolumeX, Menu, Layers, Send, ChevronDown, Maximize2, Minimize2, Save, MessageSquare, Bell } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { cn } from '@/utils';
+import { cn, safeUUID } from '@/utils';
 import { Toaster } from 'sonner';
 import { toast } from '@/utils/toast';
 import { getMuted, setMuted, playButtonSound, playSendSound, playDeleteSound } from '@/utils/sounds';
 import { v4 as uuidv4 } from 'uuid';
 
+import { NotificationCenter } from './components/NotificationCenter';
+import { CustomDropdown } from './components/ui/CustomDropdown';
+import { useNotifications } from './context/NotificationContext';
+
+import { MobileExperience } from './components/MobileExperience';
+import { VirtualKeyboardProvider, useVirtualKeyboard } from './contexts/VirtualKeyboardContext';
+import { VirtualKeyboard } from './components/VirtualKeyboard';
+
 function App() {
+  return (
+    <VirtualKeyboardProvider>
+      <AppContent />
+    </VirtualKeyboardProvider>
+  );
+}
+
+function AppContent() {
+  const { isOpen: isVirtualKeyboardOpen } = useVirtualKeyboard();
   const [messages, setMessages] = useState<DiscordWebhookMessage[]>([DEFAULT_MESSAGE]);
   const [activeMessageIndex, setActiveMessageIndex] = useState(0);
   const [webhookUrl, setWebhookUrl] = useState('');
@@ -25,10 +47,11 @@ function App() {
   const [showJson, setShowJson] = useState(false);
   const [showWebhookManager, setShowWebhookManager] = useState(false);
   const [showMessageManager, setShowMessageManager] = useState(false);
-  const [messageManagerTab, setMessageManagerTab] = useState<'stack' | 'edit'>('stack');
-  const [showMobilePreview, setShowMobilePreview] = useState(false);
+  const [showMobilePreview, setShowMobilePreview] = useState(typeof window !== 'undefined' ? window.innerWidth >= 1024 : false);
   const [fullScreenPreview, setFullScreenPreview] = useState(false);
+  const [previewType, setPreviewType] = useState<'default' | 'chat'>('default');
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [showDeleteWebhookConfirm, setShowDeleteWebhookConfirm] = useState(false);
   const [showDeleteMessageConfirm, setShowDeleteMessageConfirm] = useState(false);
@@ -47,11 +70,118 @@ function App() {
   const [translateTo, setTranslateTo] = useState('en');
   const [isMutedState, setIsMutedState] = useState(getMuted());
   const [copied, setCopied] = useState(false);
-  const [activeTab, setActiveTab] = useState<'editor' | 'code' | 'block' | 'node' | 'logs' | 'templates' | 'account'>('editor');
-  const [savedWebhooks, setSavedWebhooks] = useState<{ name: string, url: string }[]>([]);
+  const [activeTab, setActiveTab] = useState<'editor' | 'code' | 'block' | 'node' | 'logs' | 'templates' | 'account' | 'bot'>('editor');
+  const { unreadCount: notificationsUnreadCount } = useNotifications();
+  const [showGlobalNotifications, setShowGlobalNotifications] = useState(false);
+  const [isCreatingTemplate, setIsCreatingTemplate] = useState(false);
+  const [showTemplateCreator, setShowTemplateCreator] = useState(false);
+  const [savedWebhooks, setSavedWebhooks] = useState<{ name: string, url: string }[]>(() => {
+    try {
+      const stored = localStorage.getItem('discord_webhooks');
+      if (stored) return JSON.parse(stored).map((w: { name: string, url: string }) => ({ name: w.name, url: w.url }));
+    } catch {
+      // Ignored
+    }
+    return [];
+  });
+
+  // Warn before reloading
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = ''; // Standard way to trigger the confirmation dialog
+      return '';
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
+
+  // Sync savedWebhooks with localStorage when it changes
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('discord_webhooks');
+      let webhooks = stored ? JSON.parse(stored) : [];
+      
+      // Update or add webhooks
+      savedWebhooks.forEach(sw => {
+        if (!webhooks.some((w: { url: string }) => w.url === sw.url)) {
+          webhooks.push({ id: uuidv4(), name: sw.name || 'Unnamed', url: sw.url, channel_id: 'unknown', guild_id: 'unknown', guild_name: 'Custom Server' });
+        }
+      });
+      // Remove webhooks that are no longer in savedWebhooks
+      webhooks = webhooks.filter((w: { url: string }) => savedWebhooks.some(sw => sw.url === w.url));
+      
+      localStorage.setItem('discord_webhooks', JSON.stringify(webhooks));
+    } catch {
+      // Ignored
+    }
+  }, [savedWebhooks]);
+
+  // Sync savedWebhooks state in real-time when custom events are triggered from AccountPanel
+  useEffect(() => {
+    const handleWebhooksUpdated = () => {
+      try {
+        const stored = localStorage.getItem('discord_webhooks');
+        if (stored) {
+          const parsed = JSON.parse(stored).map((w: { name: string, url: string }) => ({ name: w.name, url: w.url }));
+          setSavedWebhooks(parsed);
+        } else {
+          setSavedWebhooks([]);
+        }
+      } catch {
+        // Ignored
+      }
+    };
+
+    window.addEventListener('discord_webhooks_updated', handleWebhooksUpdated);
+    window.addEventListener('webhook_count_updated', handleWebhooksUpdated);
+    return () => {
+      window.removeEventListener('discord_webhooks_updated', handleWebhooksUpdated);
+      window.removeEventListener('webhook_count_updated', handleWebhooksUpdated);
+    };
+  }, []);
+
+   // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   const [botStatus, setBotStatus] = useState<{
+    status: 'offline' | 'connecting' | 'online';
+    username: string | null;
+    id: string | null;
+    avatar: string | null;
+    guildsCount: number;
+    error: string | null;
+  } | null>(null);
+
+  // Onboarding editing coordination state
+  const [isOnboardingEdit, setIsOnboardingEdit] = useState(false);
+  const [isTriggerEdit, setIsTriggerEdit] = useState(false);
+  const [onboardingBackupMessages, setOnboardingBackupMessages] = useState<DiscordWebhookMessage[] | null>(null);
+  const [onboardingBackupIndex, setOnboardingBackupIndex] = useState<number | null>(null);
+  const [onboardingConfirmCallback, setOnboardingConfirmCallback] = useState<((msg: DiscordWebhookMessage) => void) | null>(null);
+
+  useEffect(() => {
+    const fetchBotStatusGlobal = async () => {
+      try {
+        const res = await fetch('/api/bot/status');
+        if (res.ok) {
+          const data = await res.json();
+          setBotStatus(data);
+        }
+      } catch {
+        // Silent catch for background polling during server restarts or transient disconnects
+      }
+    };
+    fetchBotStatusGlobal();
+    const interval = setInterval(fetchBotStatusGlobal, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [autoCorrectEnabled, setAutoCorrectEnabled] = useState(false);
   const [channelName, setChannelName] = useState("general");
+  const [showIntro, setShowIntro] = useState(true);
 
   // Undo/Redo History
   const [history, setHistory] = useState<DiscordWebhookMessage[]>([DEFAULT_MESSAGE]);
@@ -70,10 +200,66 @@ function App() {
   const [webhookData, setWebhookData] = useState<{ name?: string, avatar?: string } | null>(null);
 
   useEffect(() => {
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    if (isMobile) {
-      setShowMobileWarning(true);
+    // Disable the blocking caution dialog on load to provide immediate layout access on mobile
+    setShowMobileWarning(false);
+
+    // Viewport Height Fix for Mobile
+    const setHeight = () => {
+      if (window.visualViewport) {
+        const vh = window.visualViewport.height * 0.01;
+        // Only update VH if not a keyboard event
+        const isKeyboard = window.visualViewport.height < window.innerHeight * 0.85;
+        if (!isKeyboard) {
+          document.documentElement.style.setProperty('--vh', `${vh}px`);
+        }
+        setIsKeyboardOpen(isKeyboard);
+      } else {
+        const vh = window.innerHeight * 0.01;
+        document.documentElement.style.setProperty('--vh', `${vh}px`);
+      }
+    };
+
+    setHeight();
+    window.addEventListener('resize', setHeight);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', setHeight);
+      window.visualViewport.addEventListener('scroll', setHeight);
     }
+
+    // Keyboard Detection Fallback
+    const handleFocus = (e: FocusEvent) => {
+      const target = e.target as HTMLInputElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        // Don't trigger for checkboxes or radios
+        if (target.type === 'checkbox' || target.type === 'radio') return;
+        setIsKeyboardOpen(true);
+      }
+    };
+
+    const handleBlur = () => {
+      // Allow visualViewport resize to take precedence
+      setTimeout(() => {
+        if (window.visualViewport) {
+          const isKeyboard = window.visualViewport.height < window.innerHeight * 0.85;
+          setIsKeyboardOpen(isKeyboard);
+        } else {
+          setIsKeyboardOpen(false);
+        }
+      }, 300); // Increased delay
+    };
+
+    window.addEventListener('focusin', handleFocus as unknown as EventListener);
+    window.addEventListener('focusout', handleBlur);
+
+    return () => {
+      window.removeEventListener('resize', setHeight);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', setHeight);
+        window.visualViewport.removeEventListener('scroll', setHeight);
+      }
+      window.removeEventListener('focusin', handleFocus as unknown as EventListener);
+      window.removeEventListener('focusout', handleBlur);
+    };
   }, []);
 
   // Fetch webhook details when URL changes
@@ -122,6 +308,25 @@ function App() {
     document.addEventListener('OPEN_ACCOUNT_SETTINGS', handleOpenAccount);
     return () => document.removeEventListener('OPEN_ACCOUNT_SETTINGS', handleOpenAccount);
   }, []);
+
+  useEffect(() => {
+    const handleOpenCreator = () => setShowTemplateCreator(true);
+    window.addEventListener('OPEN_TEMPLATE_CREATOR', handleOpenCreator);
+    return () => window.removeEventListener('OPEN_TEMPLATE_CREATOR', handleOpenCreator);
+  }, []);
+
+  useEffect(() => {
+    const handleSwitchTab = (e: Event) => {
+      const customEvent = e as CustomEvent<string>;
+      if (customEvent.detail) {
+        setActiveTab(customEvent.detail as 'editor' | 'code' | 'block' | 'node' | 'logs' | 'templates' | 'account' | 'bot');
+      }
+    };
+    window.addEventListener('SWITCH_APP_TAB', handleSwitchTab as EventListener);
+    return () => window.removeEventListener('SWITCH_APP_TAB', handleSwitchTab as EventListener);
+  }, []);
+
+  // Current message helper
 
   // Current message helper
   const checkLimits = (msg: DiscordWebhookMessage) => {
@@ -269,7 +474,7 @@ function App() {
   };
 
   const addNewMessage = () => {
-    setMessages([...messages, { ...DEFAULT_MESSAGE, content: "New Message" }]);
+    setMessages([...messages, { ...DEFAULT_MESSAGE, id: uuidv4(), content: "New Message" }]);
     setActiveMessageIndex(messages.length);
     toast.success("New message added to stack");
     addLog("Added new message to stack", 'info');
@@ -285,17 +490,43 @@ function App() {
     addLog(`Removed message #${index + 1}`, 'warn');
   };
 
-  const editorModes = [
+  const editorModes = useMemo(() => [
     { id: 'editor', label: 'Editor', icon: Layout },
     { id: 'code', label: 'Code', icon: Code },
     { id: 'block', label: 'Block', icon: Box },
     { id: 'node', label: 'Node', icon: GitGraph },
-  ] as const;
+  ] as const, []);
+
+  const isProfessionalDevice = () => {
+    if (typeof window === 'undefined') return true;
+    const width = window.innerWidth;
+    const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    const isPhone = /iPhone|Android|Mobile/i.test(navigator.userAgent) && width < 640;
+    const isTablet = (/iPad|Tablet/i.test(navigator.userAgent) || isTouch) && width < 1024;
+    
+    return !(isPhone || isTablet);
+  };
+
+  const filteredEditorModes = useMemo(() => {
+    // Only 'editor' mode for non-professional devices (phones/tablets)
+    if (!isProfessionalDevice()) {
+      return editorModes.filter(mode => mode.id === 'editor');
+    }
+    return editorModes;
+  }, [editorModes]);
+
+  useEffect(() => {
+    // If current tab is one that was filtered out, switch to editor
+    if (!isProfessionalDevice() && (activeTab === 'code' || activeTab === 'block' || activeTab === 'node')) {
+      setActiveTab('editor');
+    }
+  }, [activeTab]);
 
   const tabs = [
     { id: 'templates', label: 'Templates', icon: FileText },
     { id: 'logs', label: 'Logs', icon: Terminal },
     { id: 'account', label: 'Account', icon: User },
+    { id: 'bot', label: 'DWM Companion', icon: Webhook },
   ] as const;
 
   const [editMessageUrl, setEditMessageUrl] = useState('');
@@ -451,16 +682,53 @@ function App() {
     const toastId = toast.loading(`${action} message...`);
 
     // Sanitize message payload
-    const payload = { ...targetMessage };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const payload = { ...targetMessage } as any;
     if (!payload.username) delete payload.username;
     if (!payload.avatar_url) delete payload.avatar_url;
+    if (!payload.thread_name || editingMessageId) delete payload.thread_name;
+    
+    // Forum mode logic
+    if (payload.forum_mode) {
+        if (!payload.thread_name && !editingMessageId) {
+            toast.error("Thread/Post name is required for Forum mode.");
+            return;
+        }
+        // If thread_name or applied_tags are present, but it's not a forum, 
+        // Discord might still accept it as a thread or error out.
+        // We ensure applied_tags is only sent if forum_mode is true
+        if (!payload.applied_tags || payload.applied_tags.length === 0) {
+            delete payload.applied_tags;
+        }
+    } else {
+        delete payload.applied_tags;
+    }
+    delete payload.forum_mode;
     
     // Remove internal fields
-    const botToken = payload.bot_token;
+    delete payload.id;
     const autoReactions = payload.auto_reactions;
     delete payload.bot_token;
     delete payload.auto_reactions;
     delete payload.use_bot_token;
+
+    // Sanitize components for Webhooks (cannot have custom_id on style 5, and webhooks only support style 5)
+    if (payload.components) {
+      payload.components = payload.components.map(row => {
+        return {
+          ...row,
+          components: row.components.map(btn => {
+            const sanitizedBtn = { ...btn };
+            sanitizedBtn.style = 5; // Force Link style for webhooks
+            if (!sanitizedBtn.url) {
+                sanitizedBtn.url = "https://discord.com"; // Prevent 400 error if URL is missing
+            }
+            delete sanitizedBtn.custom_id; // Link buttons cannot have a custom_id
+            return sanitizedBtn;
+          })
+        };
+      });
+    }
 
     try {
       let body: string | FormData;
@@ -485,22 +753,72 @@ function App() {
 
       if (editingMessageId) {
           sendUrl = `${webhookUrl}/messages/${editingMessageId}`;
+          if (targetMessage.thread_id) {
+              sendUrl += `?thread_id=${targetMessage.thread_id}`;
+          }
           method = 'PATCH';
       } else {
-          // Append wait=true if we need to add reactions (to get the message ID)
-          const shouldWait = autoReactions && autoReactions.length > 0 && botToken;
-          if (shouldWait) sendUrl = `${webhookUrl}?wait=true`;
+          // Always append wait=true so we can capture the message ID
+          sendUrl = `${webhookUrl}?wait=true`;
+          if (targetMessage.thread_id) {
+              sendUrl += `&thread_id=${targetMessage.thread_id}`;
+          }
       }
 
-      const response = await fetch(sendUrl, {
+      const isForumAttempt = targetMessage.forum_mode;
+      let finalResponse = await fetch(sendUrl, {
         method,
         headers,
         body,
       });
 
-      if (response.ok) {
+      // Handle Forum Fallback as requested
+      if (!finalResponse.ok && isForumAttempt && !editingMessageId) {
+        const errorData = await finalResponse.json().catch(() => ({}));
+        if (errorData.message?.toLowerCase().includes('forum') || finalResponse.status === 400) {
+            toast.error("Not a Forum Channel! Sending as a normal thread instead.", { id: toastId });
+            addLog(`Forum Post Warning: Webhook is not in a forum channel. Falling back to normal thread.`, 'error');
+
+            const fallbackPayload = { ...payload };
+            delete fallbackPayload.applied_tags;
+            
+            let fallbackBody: string | FormData;
+            if (payload.files && payload.files.length > 0) {
+                const formData = new FormData();
+                formData.append('payload_json', JSON.stringify(fallbackPayload));
+                payload.files.forEach((f, i) => { if (f.file) formData.append(`files[${i}]`, f.file); });
+                fallbackBody = formData;
+            } else {
+                fallbackBody = JSON.stringify(fallbackPayload);
+            }
+
+            finalResponse = await fetch(sendUrl, {
+                method,
+                headers,
+                body: fallbackBody,
+            });
+        }
+      }
+
+      if (finalResponse.ok) {
         toast.success(`Message ${editingMessageId ? "updated" : "sent"} successfully!`, { id: toastId });
         addLog(`Message ${editingMessageId ? "updated" : "sent"} successfully`, 'success');
+        
+        let sentMessageId = editingMessageId;
+        let sentChannelId = null;
+
+        try {
+          const responseData = await finalResponse.json();
+          sentMessageId = responseData.id || sentMessageId;
+          sentChannelId = responseData.channel_id;
+        } catch {
+          // Response wasn't JSON
+        }
+
+        // Enter or stay in edit mode
+        if (sentMessageId) {
+            setEditingMessageId(sentMessageId);
+        }
         
         if (!editingMessageId) {
           try {
@@ -508,57 +826,60 @@ function App() {
             const counts = countsStr ? JSON.parse(countsStr) : {};
             counts[webhookUrl] = (counts[webhookUrl] || 0) + 1;
             localStorage.setItem('webhook_message_counts', JSON.stringify(counts));
+            
+            // Save to history
+            const historyStr = localStorage.getItem('webhook_history');
+            const history = historyStr ? JSON.parse(historyStr) : [];
+            const webhooksStr = localStorage.getItem('discord_webhooks');
+            const webhooks = webhooksStr ? JSON.parse(webhooksStr) : [];
+            const webhookName = webhooks.find((w: { url: string; name: string }) => w.url === webhookUrl)?.name || 'Unknown Webhook';
+            history.unshift({
+              id: safeUUID(),
+              name: webhookName,
+              time: new Date().toISOString(),
+              status: 'success'
+            });
+            // Keep only last 50
+            if (history.length > 50) history.pop();
+            localStorage.setItem('webhook_history', JSON.stringify(history));
+            
             window.dispatchEvent(new Event('webhook_count_updated'));
-          } catch (e) {
-            console.error('Failed to update webhook count', e);
+          } catch {
+            console.error('Failed to update webhook count/history');
           }
         }
 
-        if (editingMessageId) {
-            setEditingMessageId(null); // Exit edit mode
-        }
-
-        // Handle Auto Reactions (Only for new messages or if we want to add to existing?)
-        // Usually auto-reactions are for new messages. Adding to existing might duplicate.
-        // Let's only do it for new messages for now, or if specifically requested.
-        // The user didn't specify, but "like sending a new message" implies full functionality.
-        // However, we don't get the ID back from a PATCH usually unless we ask?
-        // PATCH returns the message object.
-        
-        if (!editingMessageId) {
-            const shouldWait = autoReactions && autoReactions.length > 0 && botToken;
-            if (shouldWait) {
-                try {
-                    const responseData = await response.json();
-                    const messageId = responseData.id;
-                    const channelId = responseData.channel_id;
-                    
-                    if (messageId && channelId && botToken) {
-                        addLog(`Adding ${autoReactions!.length} reactions...`, 'info');
-                        for (const emoji of autoReactions!) {
-                            const encodedEmoji = encodeURIComponent(emoji);
-                            const reactionUrl = `https://discord.com/api/v10/channels/${channelId}/messages/${messageId}/reactions/${encodedEmoji}/@me`;
-                            
-                            await fetch(reactionUrl, {
-                                method: 'PUT',
-                                headers: {
-                                    'Authorization': `Bot ${botToken}`,
-                                    'Content-Type': 'application/json'
-                                }
-                            });
-                            await new Promise(r => setTimeout(r, 500));
-                        }
-                        addLog("Reactions added successfully", 'success');
-                        toast.success("Reactions added!");
-                    }
-                } catch (reactionError) {
-                    console.error("Failed to add reactions", reactionError);
+        // Handle Auto Reactions via backend companion bot
+        if (!editingMessageId && autoReactions && autoReactions.length > 0 && sentMessageId && sentChannelId) {
+            try {
+                addLog(`Adding ${autoReactions.length} reactions via DWM Companion...`, 'info');
+                const reactResponse = await fetch('/api/bot/react', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        channelId: sentChannelId,
+                        messageId: sentMessageId,
+                        reactions: autoReactions
+                    })
+                });
+                
+                if (reactResponse.ok) {
+                    addLog("Reactions added successfully via DWM Companion!", 'success');
+                    toast.success("Auto reactions added!");
+                } else {
+                    const errData = await reactResponse.json().catch(() => ({}));
+                    throw new Error(errData.error || 'Failed to add reactions');
                 }
+            } catch (reactionError: unknown) {
+                const errMsg = reactionError instanceof Error ? reactionError.message : 'Companion offline';
+                console.error("Failed to add reactions", reactionError);
+                addLog(`Failed to add reactions: ${errMsg}`, 'error');
+                toast.error("Auto reaction failed. Make sure DWM Companion is active & in server.");
             }
         }
 
       } else {
-        const text = await response.text();
+        const text = await finalResponse.text();
         let errorMsg = text;
         try {
             const jsonError = JSON.parse(text);
@@ -567,35 +888,97 @@ function App() {
             // Ignore JSON parse error
         }
         
-        toast.error(`Failed to ${editingMessageId ? "update" : "send"}: ${response.status}`, { description: errorMsg, id: toastId });
-        addLog(`Failed to ${editingMessageId ? "update" : "send"}: ${response.status} - ${errorMsg}`, 'error');
+        // Save to history
+        try {
+          const historyStr = localStorage.getItem('webhook_history');
+          const history = historyStr ? JSON.parse(historyStr) : [];
+          const webhooksStr = localStorage.getItem('discord_webhooks');
+          const webhooks = webhooksStr ? JSON.parse(webhooksStr) : [];
+          const webhookName = webhooks.find((w: { url: string; name: string }) => w.url === webhookUrl)?.name || 'Unknown Webhook';
+          history.unshift({
+            id: safeUUID(),
+            name: webhookName,
+            time: new Date().toISOString(),
+            status: 'error'
+          });
+          if (history.length > 50) history.pop();
+          localStorage.setItem('webhook_history', JSON.stringify(history));
+          window.dispatchEvent(new Event('webhook_count_updated'));
+        } catch (e) {
+          console.error('Failed to update webhook history', e);
+        }
+
+        toast.error(`Failed to ${editingMessageId ? "update" : "send"}: ${finalResponse.status}`, { description: errorMsg, id: toastId });
+        addLog(`Failed to ${editingMessageId ? "update" : "send"}: ${finalResponse.status} - ${errorMsg}`, 'error');
       }
     } catch (error) {
       toast.error(`Error: ${error}`, { id: toastId });
       addLog(`Network error: ${error}`, 'error');
+      
+      // Save to history
+      try {
+        const historyStr = localStorage.getItem('webhook_history');
+        const history = historyStr ? JSON.parse(historyStr) : [];
+        const webhooksStr = localStorage.getItem('discord_webhooks');
+        const webhooks = webhooksStr ? JSON.parse(webhooksStr) : [];
+        const webhookName = webhooks.find((w: { url: string; name: string }) => w.url === webhookUrl)?.name || 'Unknown Webhook';
+        history.unshift({
+          id: safeUUID(),
+          name: webhookName,
+          time: new Date().toISOString(),
+          status: 'error'
+        });
+        if (history.length > 50) history.pop();
+        localStorage.setItem('webhook_history', JSON.stringify(history));
+        window.dispatchEvent(new Event('webhook_count_updated'));
+      } catch (e) {
+        console.error('Failed to update webhook history', e);
+      }
     } finally {
       setIsSending(false);
     }
   };
 
   return (
-    <div className="h-screen w-full overflow-hidden bg-[#0a0a0a] text-zinc-100 flex flex-col font-sans selection:bg-white/30 selection:text-white">
-      <Toaster position="top-center" theme="dark" />
+    <div 
+      className="w-full overflow-hidden bg-[#0a0a0a] text-zinc-100 flex flex-col font-sans selection:bg-white/30 selection:text-white"
+      style={{ height: 'calc(var(--vh, 1vh) * 100)' }}
+    >
+      <Toaster 
+        position="top-center" 
+        theme="dark" 
+        className="!z-[9999]"
+        toastOptions={{
+          className: "backdrop-blur-[40px] bg-black/40 border border-white/10 text-white rounded-2xl shadow-2xl",
+          style: {
+            backdropFilter: 'blur(40px)',
+            WebkitBackdropFilter: 'blur(40px)',
+            backgroundColor: 'rgba(0, 0, 0, 0.4)',
+          }
+        }}
+      />
       
-      {/* Header */}
-      <header className="sticky top-0 z-[70] bg-[#121212] border-b border-[#222]">
-        <div className="w-full px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-7 h-7 bg-cyan-500 rounded flex items-center justify-center shadow-[0_0_15px_rgba(6,182,212,0.3)]">
-              <Webhook className="w-4 h-4 text-black" />
+      <header className={cn(
+        "fixed top-0 left-0 right-0 z-[130] bg-[#121212]/70 backdrop-blur-xl border-b border-white/5 transition-transform duration-300",
+        isVirtualKeyboardOpen ? "-translate-y-full" : "translate-y-0"
+      )}>
+        <div className="w-full px-4 h-14 lg:h-12 flex items-center justify-between">
+          <div className="flex items-center gap-3 sm:gap-2">
+            <div className="w-8 h-8 lg:w-6 lg:h-6 bg-cyan-500 rounded-lg flex items-center justify-center shadow-[0_0_15px_rgba(6,182,212,0.4)]">
+              <Webhook className="w-5 h-5 lg:w-3 lg:h-3 text-black" />
             </div>
-            <h1 className="font-bold text-sm tracking-wide uppercase text-zinc-200 hidden sm:block">DisCord WebHook Manager <span className="text-zinc-500 font-normal">[EQN]</span></h1>
-            <h1 className="font-bold text-sm tracking-wide uppercase text-zinc-200 sm:hidden">DWM <span className="text-zinc-500 font-normal">[EQN]</span></h1>
+            <div className="flex flex-col">
+              <h1 className="font-black text-[13px] lg:text-[11px] tracking-tighter uppercase text-zinc-200">
+                <span className="lg:hidden">DWM</span>
+                <span className="hidden lg:inline">Discord Webhook Manager</span>
+                <span className="text-zinc-500 font-normal ml-1">[EQN]</span>
+              </h1>
+            </div>
           </div>
           
           <div className="flex items-center gap-1.5">
             <div className="hidden sm:flex bg-[#0a0a0a] border border-[#222] rounded-md p-0.5 mr-2">
-              {editorModes.map(mode => (
+              {filteredEditorModes.map(mode => (
                 <button
                   key={mode.id}
                   onClick={() => { playButtonSound(); setActiveTab(mode.id); }}
@@ -627,21 +1010,15 @@ function App() {
             <div className="w-px h-4 bg-[#333] mx-1" />
             <button
               onClick={() => { playButtonSound(); setShowMobilePreview(!showMobilePreview); }}
-              className="xl:hidden p-1.5 text-zinc-400 hover:text-white hover:bg-[#222] rounded transition-colors"
-              title={showMobilePreview ? "Hide Preview" : "Show Preview"}
+              className="p-1.5 text-cyan-400 hover:text-white hover:bg-cyan-500/10 rounded transition-all flex items-center gap-1.5 px-3 py-1 bg-cyan-950/20 border border-cyan-500/30 font-semibold md:px-3 md:py-1.5"
+              title={showMobilePreview ? "Hide Preview" : "See Live Preview"}
             >
-              {showMobilePreview ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              {showMobilePreview ? <EyeOff className="w-4 h-4 text-cyan-400" /> : <Eye className="w-4 h-4 text-cyan-400" />}
+              <span className="text-xs font-bold sm:hidden md:inline-block lg:inline-block xl:inline-block">{showMobilePreview ? "Hide Preview" : "See Preview"}</span>
             </button>
-            <div className="w-px h-4 bg-[#333] mx-1 xl:hidden" />
+            <div className="w-px h-4 bg-[#333] mx-1" />
             
             <div className="hidden sm:flex items-center gap-1.5">
-              <button
-                onClick={() => { playSendSound(); handleSend(); }}
-                disabled={isSending || !webhookUrl}
-                className="px-4 py-1.5 text-xs font-bold bg-cyan-500 hover:bg-cyan-400 text-black rounded transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_10px_rgba(6,182,212,0.2)]"
-              >
-                <Send className="w-3.5 h-3.5" /> <span>SEND</span>
-              </button>
               <button
                 onClick={() => { playButtonSound(); setShowWebhookManager(true); }}
                 className="px-3 py-1.5 text-xs font-medium bg-[#222] hover:bg-[#333] text-zinc-300 rounded transition-colors flex items-center gap-2 border border-[#333]"
@@ -649,6 +1026,8 @@ function App() {
                 <Settings className="w-3.5 h-3.5" /> <span>Settings</span>
               </button>
 
+              <div className="w-px h-4 bg-[#333] mx-1" />
+              <NotificationCenter />
               <div className="w-px h-4 bg-[#333] mx-1" />
               <button
                 onClick={() => { playButtonSound(); setShowTextOptionsModal(true); }}
@@ -675,17 +1054,39 @@ function App() {
               >
                 <Trash2 className="w-4 h-4" />
               </button>
+
+              <div className="w-px h-4 bg-[#333] mx-1" />
+              
+              <button
+                onClick={() => { playSendSound(); handleSend(); }}
+                disabled={isSending || !webhookUrl}
+                className={cn(
+                  "px-6 py-2 text-xs font-black tracking-[0.1em] rounded-full transition-all flex items-center gap-2 ml-1",
+                  !webhookUrl 
+                    ? "bg-[#222] text-zinc-600 cursor-not-allowed border border-[#333]" 
+                    : isSending 
+                      ? "bg-cyan-500 text-white animate-pulse" 
+                      : "bg-cyan-500 hover:bg-cyan-400 text-black shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:shadow-[0_0_30px_rgba(6,182,212,0.5)] active:scale-95"
+                )}
+              >
+                {isSending ? (
+                  <div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin" />
+                ) : (
+                  editingMessageId ? <Save className="w-4 h-4" /> : <Send className="w-4 h-4" />
+                )}
+                <span>{editingMessageId ? 'UPDATE MESSAGE' : 'SEND WEBHOOK'}</span>
+              </button>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="flex-1 overflow-hidden flex pb-16 sm:pb-0">
+      <main className="flex-1 overflow-hidden flex pb-14 sm:pb-0 pt-14 lg:pt-12 relative">
         
         {/* Left Sidebar Menu (Desktop) */}
-        <div className="hidden sm:flex w-16 bg-[#121212] border-r border-[#222] flex-col items-center py-4 gap-2 z-40 overflow-y-auto overflow-x-hidden custom-scrollbar">
+        <div className="hidden sm:flex w-16 bg-[#121212] border-r border-[#222] flex-col items-center py-4 gap-2 z-40 overflow-y-auto overflow-x-hidden custom-scrollbar shrink-0">
            <div className="w-full flex flex-col items-center gap-2 mb-4 pb-4 border-b border-[#222]">
-             {editorModes.map(mode => (
+             {filteredEditorModes.map(mode => (
                <button
                  key={mode.id}
                  onClick={() => setActiveTab(mode.id)}
@@ -758,7 +1159,10 @@ function App() {
           
           {/* Editor Area */}
           <div className="flex-1 h-full overflow-hidden relative bg-[#0a0a0a]">
-            <div className="absolute inset-0 p-4 lg:p-6 overflow-y-auto custom-scrollbar">
+            <div className={cn(
+              "absolute inset-0 overflow-y-auto custom-scrollbar",
+              ['editor', 'code', 'block', 'node'].includes(activeTab) ? "p-4 pb-0 lg:p-6 lg:pb-0" : "p-0"
+            )}>
               {activeTab === 'editor' && (
                 <WebhookEditor
                   message={message}
@@ -773,6 +1177,52 @@ function App() {
                   onCancelEdit={() => setEditingMessageId(null)}
                   autoCorrectEnabled={autoCorrectEnabled}
                   spellCheckEnabled={spellCheckEnabled}
+                  isCreatingTemplate={isCreatingTemplate}
+                  onTemplateDone={() => {
+                    setIsCreatingTemplate(false);
+                    localStorage.setItem('pending_template_save_trigger', 'true');
+                    setActiveTab('account');
+                    document.dispatchEvent(new CustomEvent('SAVE_TEMPLATE_FROM_EDITOR'));
+                  }}
+                  onTemplateCancel={() => {
+                    setIsCreatingTemplate(false);
+                    setActiveTab('account');
+                  }}
+                  onClear={() => {
+                    if (confirm('Are you sure you want to clear the entire message?')) {
+                      setMessage(DEFAULT_MESSAGE);
+                    }
+                  }}
+                  onSaveTemplate={() => setIsCreatingTemplate(true)}
+                  isOnboardingEdit={isOnboardingEdit}
+                  isTriggerEdit={isTriggerEdit}
+                  onConfirmOnboarding={() => {
+                    if (onboardingConfirmCallback) {
+                       onboardingConfirmCallback(message);
+                    }
+                    if (onboardingBackupMessages && onboardingBackupIndex !== null) {
+                      setMessages(onboardingBackupMessages);
+                      setActiveMessageIndex(onboardingBackupIndex);
+                    }
+                    setIsOnboardingEdit(false);
+                    setIsTriggerEdit(false);
+                    setOnboardingBackupMessages(null);
+                    setOnboardingBackupIndex(null);
+                    setOnboardingConfirmCallback(null);
+                    setActiveTab('bot');
+                  }}
+                  onCancelOnboarding={() => {
+                    if (onboardingBackupMessages && onboardingBackupIndex !== null) {
+                      setMessages(onboardingBackupMessages);
+                      setActiveMessageIndex(onboardingBackupIndex);
+                    }
+                    setIsOnboardingEdit(false);
+                    setIsTriggerEdit(false);
+                    setOnboardingBackupMessages(null);
+                    setOnboardingBackupIndex(null);
+                    setOnboardingConfirmCallback(null);
+                    setActiveTab('bot');
+                  }}
                 />
               )}
               {activeTab === 'code' && (
@@ -803,7 +1253,6 @@ function App() {
               )}
               {activeTab === 'templates' && (
                 <TemplatesPanel 
-                  currentMessage={message} 
                   onApply={(msg) => {
                     setMessage(msg);
                     addLog("Applied template", 'info');
@@ -811,65 +1260,144 @@ function App() {
                 />
               )}
               {activeTab === 'account' && (
-                <AccountPanel message={message} onChange={setMessage} />
+                <AccountPanel 
+                  message={message} 
+                  onChange={setMessage} 
+                  onSelectWebhook={(url, name) => {
+                    setWebhookUrl(url);
+                    setChannelName(name);
+                    toast.success(`Selected webhook: #${name}`);
+                    setActiveTab('editor');
+                  }}
+                />
+              )}
+              {activeTab === 'bot' && (
+                <CompanionBotPanel 
+                  onEditOnboardingMessage={(currentOnboardingMsg, onSaveCallback) => {
+                    setOnboardingBackupMessages(messages);
+                    setOnboardingBackupIndex(activeMessageIndex);
+                    setMessages([currentOnboardingMsg]);
+                    setActiveMessageIndex(0);
+                    setIsOnboardingEdit(true);
+                    setOnboardingConfirmCallback(() => onSaveCallback);
+                    setActiveTab('editor');
+                  }}
+                  onEditTriggerMessage={(currentMsg, onSaveCallback) => {
+                    setOnboardingBackupMessages(messages);
+                    setOnboardingBackupIndex(activeMessageIndex);
+                    setMessages([currentMsg]);
+                    setActiveMessageIndex(0);
+                    setIsOnboardingEdit(true);
+                    setIsTriggerEdit(true);
+                    setOnboardingConfirmCallback(() => onSaveCallback);
+                    setActiveTab('editor');
+                  }}
+                  onAddWebhook={(url, name) => {
+                    setWebhookUrl(url);
+                    setChannelName(name);
+                    toast.success(`Active webhook updated to #${name}`);
+                    setActiveTab('editor');
+                  }}
+                />
               )}
             </div>
           </div>
 
           {/* Preview Column (Responsive) */}
-          <div className={cn(
-            "bg-[#121212] border-l border-[#222] transition-all duration-300 ease-in-out overflow-x-hidden overflow-y-auto shadow-[-10px_0_30px_rgba(0,0,0,0.5)]",
-            fullScreenPreview 
-              ? "fixed inset-0 z-[100] w-full h-full" 
-              : "fixed inset-0 z-[60] xl:static xl:block xl:w-[450px]",
-            !fullScreenPreview && (showMobilePreview ? "translate-x-0" : "translate-x-full xl:translate-x-0"),
-            activeTab === 'account' && "hidden xl:hidden"
-          )}>
-             <div className="h-full p-4 flex flex-col bg-[#121212]">
-                <div className="flex items-center justify-between mb-4 xl:mb-4">
-                    <h3 className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">Live Preview</h3>
-                    <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => { playButtonSound(); setFullScreenPreview(!fullScreenPreview); }}
-                          className="p-1.5 text-zinc-400 hover:text-white hover:bg-[#222] rounded transition-colors"
-                          title={fullScreenPreview ? "Exit Full Screen" : "Full Screen"}
-                        >
-                          {fullScreenPreview ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
-                        </button>
-                        <button
-                          onClick={() => { playButtonSound(); setDarkMode(!darkMode); }}
-                          className="p-1.5 text-zinc-400 hover:text-white hover:bg-[#222] rounded transition-colors"
-                        >
-                          {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-                        </button>
-                        <button 
-                            onClick={() => { 
-                              playButtonSound(); 
-                              setShowMobilePreview(false); 
-                              setFullScreenPreview(false);
-                            }} 
-                            className="xl:hidden p-1.5 hover:bg-[#222] rounded text-zinc-400 hover:text-white transition-colors"
-                        >
-                            <X className="w-4 h-4" />
-                        </button>
+          <AnimatePresence>
+            {(fullScreenPreview && window.innerWidth < 1024) ? (
+              <DiscordMobileChat 
+                message={message} 
+                webhookData={webhookData} 
+                channelName={channelName}
+                onExit={() => { setFullScreenPreview(false); setShowMobilePreview(false); }} 
+              />
+            ) : (
+              <div className={cn(
+                "bg-[#121212] border-l border-[#222] transition-all duration-300 ease-in-out overflow-x-hidden overflow-y-auto z-[110]",
+                "fixed inset-y-0 right-0 shadow-[-10px_0_30px_rgba(0,0,0,0.55)] w-full sm:w-[460px] md:w-[480px]",
+                "lg:static lg:transform-none lg:flex-shrink-0 lg:w-[420px] xl:w-[480px] lg:shadow-none",
+                !showMobilePreview && "translate-x-full lg:hidden",
+                showMobilePreview && "translate-x-0",
+                fullScreenPreview && "!fixed !inset-0 !w-full !h-full !max-w-none !transform-none !z-[120]"
+              )}>
+                 <div className="h-full p-4 flex flex-col bg-[#121212]">
+                    <div className="flex items-center justify-between mb-4 xl:mb-4">
+                        <h3 className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">Live Preview</h3>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => { playButtonSound(); setPreviewType(previewType === 'default' ? 'chat' : 'default'); }}
+                                className={cn(
+                                    "p-1.5 transition-all rounded-md flex items-center gap-2",
+                                    previewType === 'chat' 
+                                    ? "text-white bg-[#5865F2] shadow-[0_0_10px_rgba(88,101,242,0.3)]" 
+                                    : "text-zinc-600 bg-white/5 hover:text-white"
+                                )}
+                                title={previewType === 'chat' ? "Layout: Message" : "Layout: Channel"}
+                            >
+                                {previewType === 'chat' ? (
+                                    <MessageSquare className="w-4 h-4 fill-current" />
+                                ) : (
+                                    <MessageSquare className="w-4 h-4" />
+                                )}
+                            </button>
+                            <div className="hidden lg:block">
+                                <button
+                                    onClick={() => { playButtonSound(); setFullScreenPreview(!fullScreenPreview); }}
+                                    className="p-1.5 text-zinc-600 bg-white/5 hover:text-white rounded-md transition-all active:scale-95"
+                                    title={fullScreenPreview ? "Exit Full Screen" : "Full Screen"}
+                                >
+                                    {fullScreenPreview ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                                </button>
+                            </div>
+                            <button
+                              onClick={() => { playButtonSound(); setDarkMode(!darkMode); }}
+                              className="p-1.5 text-zinc-400 hover:text-white hover:bg-[#222] rounded transition-colors"
+                            >
+                              {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+                            </button>
+                            <button 
+                                onClick={() => { 
+                                  playButtonSound(); 
+                                  setShowMobilePreview(false); 
+                                  setFullScreenPreview(false);
+                                }} 
+                                className="p-1.5 hover:bg-[#222] rounded text-zinc-400 hover:text-white transition-colors"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
                     </div>
-                </div>
-                <div className={`${darkMode ? 'bg-[#313338] border-[#1e1f22]' : 'bg-[#ffffff] border-[#e3e5e8]'} rounded-xl shadow-[0_0_20px_rgba(0,0,0,0.3)] overflow-hidden flex-1 border`}>
-                  <div className={`h-10 ${darkMode ? 'bg-[#1e1f22] border-[#111214]' : 'bg-[#f2f3f5] border-[#e3e5e8]'} flex items-center px-4 gap-2 border-b`}>
-                    <div className={`${darkMode ? 'text-[#949BA4]' : 'text-[#5c5e66]'} font-bold text-sm`}># {channelName}</div>
-                  </div>
-                  <div className="p-0 h-[calc(100%-2.5rem)] overflow-y-auto overflow-x-hidden custom-scrollbar">
-                    <MessagePreview message={message} webhookData={webhookData} darkMode={darkMode} />
-                  </div>
-                </div>
-             </div>
-          </div>
+                    <div className={cn(
+                      "rounded-xl shadow-[0_0_20px_rgba(0,0,0,0.3)] overflow-hidden flex-1 border transition-colors",
+                      darkMode ? 'bg-[#313338] border-[#1e1f22]' : 'bg-[#ffffff] border-[#e3e5e8]'
+                    )}>
+                      <div className={cn(
+                        "h-10 flex items-center px-4 gap-2 border-b",
+                        darkMode ? 'bg-[#1e1f22] border-[#111214]' : 'bg-[#f2f3f5] border-[#e3e5e8]'
+                      )}>
+                        <div className={cn(
+                          "font-bold text-sm",
+                          darkMode ? 'text-[#949BA4]' : 'text-[#5c5e66]'
+                        )}># {channelName}</div>
+                      </div>
+                      <div className="p-0 h-[calc(100%-2.5rem)] overflow-y-auto overflow-x-hidden custom-scrollbar">
+                        <MessagePreview message={message} webhookData={webhookData} darkMode={darkMode} previewType={previewType} />
+                      </div>
+                    </div>
+                 </div>
+              </div>
+            )}
+          </AnimatePresence>
 
         </div>
       </main>
 
       {/* Mobile Bottom Navigation */}
-      <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-[#121212] border-t border-[#222] flex justify-around items-center h-14 z-50">
+      <div className={cn(
+        "sm:hidden fixed bottom-0 left-0 right-0 bg-[#121212] border-t border-[#222] flex justify-around items-center h-14 z-[90] transition-all duration-300",
+        (isKeyboardOpen || isVirtualKeyboardOpen) ? "translate-y-full opacity-0 pointer-events-none" : "translate-y-0 opacity-100"
+      )}>
         <button
           onClick={() => setActiveTab('editor')}
           className={cn("flex flex-col items-center justify-center w-full h-full transition-colors", activeTab === 'editor' ? "text-cyan-400" : "text-zinc-500 hover:text-zinc-300")}
@@ -893,303 +1421,204 @@ function App() {
         </button>
       </div>
 
-      {/* Mobile Menu Drawer */}
-      {showMobileMenu && (
-        <div className="sm:hidden fixed inset-0 z-[80] bg-black/50 backdrop-blur-sm" onClick={() => setShowMobileMenu(false)}>
-          <motion.div
-            initial={{ y: "100%" }}
-            animate={{ y: 0 }}
-            exit={{ y: "100%" }}
-            transition={{ type: "spring", damping: 25, stiffness: 200 }}
-            className="absolute bottom-16 left-0 right-0 bg-white dark:bg-[#1e1f22] rounded-t-2xl p-4 shadow-xl border-t border-zinc-200 dark:border-[#111214] max-h-[80vh] overflow-y-auto custom-scrollbar"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="mb-6">
-              <h4 className="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-3 px-1">Editors</h4>
-              <div className="grid grid-cols-4 gap-4">
-                {editorModes.map(mode => (
-                  <button
-                    key={mode.id}
-                    onClick={() => { setActiveTab(mode.id); setShowMobileMenu(false); }}
-                    className={cn(
-                      "flex flex-col items-center justify-center p-3 rounded-xl transition-colors",
-                      activeTab === mode.id ? "bg-cyan-50 dark:bg-cyan-900/20 text-cyan-500" : "bg-zinc-50 dark:bg-zinc-900 text-zinc-500"
-                    )}
-                  >
-                    <mode.icon className="w-6 h-6 mb-1" />
-                    <span className="text-[10px] font-medium">{mode.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <h4 className="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-3 px-1">Tools & Settings</h4>
-              <div className="grid grid-cols-4 gap-4">
-                {tabs.filter(t => t.id !== 'logs').map(tab => (
-                  <button
-                    key={tab.id}
-                    onClick={() => { setActiveTab(tab.id); setShowMobileMenu(false); }}
-                    className={cn(
-                      "flex flex-col items-center justify-center p-3 rounded-xl transition-colors",
-                      activeTab === tab.id ? "bg-cyan-50 dark:bg-cyan-900/20 text-cyan-500" : "bg-zinc-50 dark:bg-zinc-900 text-zinc-500"
-                    )}
-                  >
-                    <tab.icon className="w-6 h-6 mb-1" />
-                    <span className="text-[10px] font-medium">{tab.label}</span>
-                  </button>
-                ))}
-                <button
-                  onClick={() => { playButtonSound(); setShowMessageManager(true); setShowMobileMenu(false); }}
-                  className="flex flex-col items-center justify-center p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900 text-zinc-500 transition-colors"
-                >
-                  <Layers className="w-6 h-6 mb-1" />
-                  <span className="text-[10px] font-medium">Manager</span>
-                </button>
-                <button
-                  onClick={() => { playButtonSound(); setShowWebhookManager(true); setShowMobileMenu(false); }}
-                  className="flex flex-col items-center justify-center p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900 text-zinc-500 transition-colors"
-                >
-                  <Settings className="w-6 h-6 mb-1" />
-                  <span className="text-[10px] font-medium">Webhooks</span>
-                </button>
-                <button
-                  onClick={() => { playButtonSound(); setShowTextOptionsModal(true); setShowMobileMenu(false); }}
-                  className="flex flex-col items-center justify-center p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900 text-zinc-500 transition-colors"
-                >
-                  <Type className="w-6 h-6 mb-1" />
-                  <span className="text-[10px] font-medium">Text Opts</span>
-                </button>
-                <button
-                  onClick={() => { playButtonSound(); setShowJson(true); setShowMobileMenu(false); }}
-                  className="flex flex-col items-center justify-center p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900 text-zinc-500 transition-colors"
-                >
-                  <FileJson className="w-6 h-6 mb-1" />
-                  <span className="text-[10px] font-medium">JSON</span>
-                </button>
-                <button
-                  onClick={() => { playButtonSound(); handleClear(); setShowMobileMenu(false); }}
-                  className="flex flex-col items-center justify-center p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900 text-red-500 transition-colors"
-                >
-                  <Trash2 className="w-6 h-6 mb-1" />
-                  <span className="text-[10px] font-medium">Clear All</span>
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        </div>
-      )}
-
-      {/* Message Manager Modal */}
-      {showMessageManager && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-[#121212] rounded-xl shadow-2xl w-full max-w-4xl flex flex-col border border-[#333]"
-          >
-            <div className="flex items-center justify-between p-4 border-b border-[#333]">
-              <h3 className="font-bold text-lg text-white">Message Manager</h3>
-              <button onClick={() => { playButtonSound(); setShowMessageManager(false); }} className="p-1.5 hover:bg-[#222] text-zinc-400 hover:text-white rounded-md transition-colors">
-                <span className="sr-only">Close</span>
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            
-            {/* Tabs */}
-            <div className="flex items-center gap-4 px-4 pt-4 border-b border-[#333]">
-                <button 
-                    onClick={() => { playButtonSound(); setMessageManagerTab('stack'); }}
-                    className={cn(
-                        "pb-2 text-sm font-medium transition-colors border-b-2",
-                        messageManagerTab === 'stack' ? "border-cyan-500 text-cyan-400" : "border-transparent text-zinc-500 hover:text-zinc-300"
-                    )}
-                >
-                    Message Stack
-                </button>
-                <button 
-                    onClick={() => { playButtonSound(); setMessageManagerTab('edit'); }}
-                    className={cn(
-                        "pb-2 text-sm font-medium transition-colors border-b-2",
-                        messageManagerTab === 'edit' ? "border-cyan-500 text-cyan-400" : "border-transparent text-zinc-500 hover:text-zinc-300"
-                    )}
-                >
-                    Edit Sent Message
-                </button>
-            </div>
-
-            <div className="p-4 space-y-4">
-                {messageManagerTab === 'stack' && (
-                    <>
-                        <div className="flex items-center justify-between">
-                            <p className="text-sm text-zinc-400">
-                                Manage multiple messages in your stack.
-                            </p>
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={() => {
-                                        playButtonSound();
-                                        setStackSelectMode(!stackSelectMode);
-                                        setSelectedMessages([]);
-                                    }}
-                                    className={cn(
-                                        "text-xs flex items-center gap-1 font-medium px-2 py-1 rounded transition-colors",
-                                        stackSelectMode ? "bg-cyan-500 text-white" : "bg-[#222] text-zinc-400 hover:bg-[#333] hover:text-white"
-                                    )}
-                                >
-                                    Select
-                                </button>
-                            </div>
-                        </div>
-                        <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar">
-                            {messages.map((msg, idx) => (
-                                <div 
-                                    key={idx}
-                                    onClick={() => {
-                                        playButtonSound();
-                                        if (stackSelectMode) {
-                                            if (selectedMessages.includes(idx)) {
-                                                setSelectedMessages(selectedMessages.filter(i => i !== idx));
-                                            } else {
-                                                setSelectedMessages([...selectedMessages, idx]);
-                                            }
-                                        } else {
-                                            setActiveMessageIndex(idx);
-                                        }
-                                    }}
-                                    className={cn(
-                                        "flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all",
-                                        stackSelectMode && selectedMessages.includes(idx)
-                                            ? "bg-cyan-500/10 border-cyan-500/50 ring-1 ring-cyan-500/50"
-                                            : activeMessageIndex === idx && !stackSelectMode
-                                                ? "bg-cyan-500/10 border-cyan-500/50 ring-1 ring-cyan-500/50" 
-                                                : "bg-[#0a0a0a] border-[#333] hover:border-[#444]"
-                                    )}
-                                >
-                                    <div className="flex items-center gap-3">
-                                        {stackSelectMode ? (
-                                            <div className={cn(
-                                                "w-5 h-5 rounded border flex items-center justify-center transition-colors",
-                                                selectedMessages.includes(idx) ? "bg-cyan-500 border-cyan-500 text-white" : "border-[#444] bg-[#121212]"
-                                            )}>
-                                                {selectedMessages.includes(idx) && <Check className="w-3 h-3" />}
-                                            </div>
-                                        ) : (
-                                            <div className={cn(
-                                                "w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold",
-                                                activeMessageIndex === idx ? "bg-cyan-500 text-white" : "bg-[#222] text-zinc-500"
-                                            )}>
-                                                {idx + 1}
-                                            </div>
-                                        )}
-                                        <div className="flex flex-col">
-                                            <span className="text-sm font-medium text-white truncate max-w-[150px]">
-                                                {msg.content || (msg.embeds?.[0]?.title) || "Empty Message"}
-                                            </span>
-                                            <span className="text-[10px] text-zinc-500">
-                                                {msg.embeds?.length || 0} embeds • {msg.files?.length || 0} files
-                                            </span>
-                                        </div>
-                                    </div>
-                                    {messages.length > 1 && !stackSelectMode && (
-                                        <button 
-                                            onClick={(e) => { e.stopPropagation(); playDeleteSound(); removeMessage(idx); }}
-                                            className="p-2 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                        {!stackSelectMode && (
-                            <button
-                                onClick={() => { playButtonSound(); addNewMessage(); }}
-                                className="w-full py-2 border-2 border-dashed border-[#333] rounded-lg text-zinc-500 hover:text-cyan-400 hover:border-cyan-500/50 hover:bg-cyan-500/5 transition-all flex items-center justify-center gap-2 font-medium text-sm"
-                            >
-                                <Plus className="w-4 h-4" /> Add New Message
-                            </button>
+      <AnimatePresence>
+        {showMobileMenu && (
+          <div className="sm:hidden fixed inset-0 z-[999]">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-[#000000] opacity-90" 
+              onClick={() => setShowMobileMenu(false)}
+            />
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 30, stiffness: 300, mass: 0.8 }}
+              drag="y"
+              dragConstraints={{ top: 0, bottom: 0 }}
+              dragElastic={{ top: 0, bottom: 0.2 }}
+              onDragEnd={(_, info) => {
+                if (info.offset.y > 100) {
+                  setShowMobileMenu(false);
+                }
+              }}
+              className="absolute bottom-0 left-0 right-0 bg-[#0c0c0c] rounded-t-[2.5rem] p-6 pt-4 shadow-[0_-20px_50px_rgba(0,0,0,1)] border-t border-white/10 max-h-[90vh] overflow-hidden flex flex-col z-[1000]"
+              style={{ 
+                transform: 'translateZ(0)',
+                WebkitTransform: 'translateZ(0)',
+                willChange: 'transform'
+              }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="w-12 h-1.5 bg-zinc-800 rounded-full mx-auto mb-10 cursor-grab active:cursor-grabbing shrink-0" />
+              
+              <div className="flex-1 overflow-y-auto no-scrollbar pb-12 px-2">
+                {/* Section: Editors */}
+                <div className="mb-10">
+                  <div className="flex flex-col mb-5 px-1">
+                    <h4 className="text-[11px] font-black text-zinc-500 uppercase tracking-[0.25em]">Studio Editors</h4>
+                    <p className="text-[10px] text-zinc-600 mt-1.5 leading-none">Best experienced on desktop devices</p>
+                  </div>
+                  <div className="grid grid-cols-4 gap-4">
+                    {filteredEditorModes.map(mode => (
+                      <button
+                        key={mode.id}
+                        onClick={() => { setActiveTab(mode.id); setShowMobileMenu(false); }}
+                        className={cn(
+                          "relative flex flex-col items-center justify-center aspect-square rounded-[1.5rem] transition-all active:scale-95 overflow-hidden",
+                          activeTab === mode.id 
+                            ? "bg-cyan-500 text-black shadow-[0_8px_24px_rgba(6,182,212,0.4)]" 
+                            : "bg-[#1a1a1a] text-zinc-400"
                         )}
-                    </>
-                )}
-
-                {messageManagerTab === 'edit' && (
-                    <div className="space-y-4">
-                        <p className="text-sm text-zinc-400">
-                            Paste the URL of the message you want to edit. This will load the message content into the editor.
-                            <br/>
-                            <span className="text-xs text-amber-500/80">Note: You can only edit messages sent by the current Webhook.</span>
-                        </p>
-                        <input 
-                            value={editMessageUrl}
-                            onChange={(e) => setEditMessageUrl(e.target.value)}
-                            placeholder="https://discord.com/channels/..."
-                            className="w-full bg-[#0a0a0a] border border-[#333] rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500 transition-colors"
-                        />
-                        <div className="flex justify-end gap-2">
-                            <button 
-                                onClick={handleLoadMessage}
-                                disabled={isSending || !editMessageUrl}
-                                className="px-4 py-2 text-sm font-bold text-cyan-400 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                            >
-                                {isSending ? 'Loading...' : 'Load Message'}
-                            </button>
-                            <button 
-                                onClick={() => { playButtonSound(); setShowDeleteMessageConfirm(true); }}
-                                disabled={isSending || !editMessageUrl}
-                                className="px-4 py-2 text-sm font-bold text-red-400 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
-                            >
-                                <Trash2 className="w-4 h-4" /> Delete Message
-                            </button>
-                        </div>
-                    </div>
-                )}
-            </div>
-            
-            {messageManagerTab === 'stack' && (
-                <div className="p-4 border-t border-[#333] bg-[#0a0a0a] rounded-b-xl flex gap-2">
-                    <button 
-                        onClick={async () => {
-                            playSendSound();
-                            setShowMessageManager(false);
-                            const msgsToSend = stackSelectMode && selectedMessages.length > 0 
-                                ? selectedMessages.map(i => messages[i]) 
-                                : messages;
-                            
-                            for (let i = 0; i < msgsToSend.length; i++) {
-                                const actualIndex = messages.indexOf(msgsToSend[i]);
-                                setActiveMessageIndex(actualIndex);
-                                await new Promise(r => setTimeout(r, 100)); // small delay to update state
-                                await handleSend(msgsToSend[i]);
-                                await new Promise(r => setTimeout(r, 1000)); // delay between sends
-                            }
-                        }}
-                        className="flex-1 py-2 bg-cyan-500 hover:bg-cyan-400 text-white rounded-lg font-bold text-sm shadow-[0_0_15px_rgba(6,182,212,0.3)] transition-all"
-                    >
-                        {stackSelectMode && selectedMessages.length > 0 ? `Send Selected (${selectedMessages.length})` : "Send All"}
-                    </button>
-                    <button 
-                        onClick={() => { playButtonSound(); setShowMessageManager(false); }}
-                        className="flex-1 py-2 bg-[#222] hover:bg-[#333] text-white rounded-lg font-bold text-sm transition-colors border border-[#333]"
-                    >
-                        Done
-                    </button>
+                      >
+                        <mode.icon className={cn("w-6 h-6 mb-2", activeTab === mode.id ? "text-black" : "text-zinc-500")} />
+                        <span className="text-[9px] font-black uppercase tracking-tight">{mode.label}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-            )}
-          </motion.div>
-        </div>
-      )}
+
+                {/* Section: Main Tabs */}
+                <div className="mb-10">
+                  <div className="flex flex-col mb-5 px-1">
+                    <h4 className="text-[11px] font-black text-zinc-500 uppercase tracking-[0.25em]">Navigation</h4>
+                  </div>
+                  <div className="grid grid-cols-4 gap-4">
+                    {tabs.filter(t => t.id !== 'logs').map(tab => (
+                      <button
+                        key={tab.id}
+                        onClick={() => { setActiveTab(tab.id); setShowMobileMenu(false); }}
+                        className={cn(
+                          "relative flex flex-col items-center justify-center aspect-square rounded-[1.5rem] transition-all active:scale-95 overflow-hidden",
+                          activeTab === tab.id 
+                            ? "bg-cyan-500 text-black shadow-[0_8px_24px_rgba(6,182,212,0.4)]" 
+                            : "bg-[#1a1a1a] text-zinc-400"
+                        )}
+                      >
+                        <tab.icon className={cn("w-6 h-6 mb-2", activeTab === tab.id ? "text-black" : "text-zinc-500")} />
+                        <span className="text-[9px] font-black uppercase tracking-tight">{tab.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Section: System Tools */}
+                <div className="mb-10">
+                  <div className="flex flex-col mb-5 px-1">
+                    <h4 className="text-[11px] font-black text-zinc-500 uppercase tracking-[0.25em]">System Tools</h4>
+                  </div>
+                  <div className="grid grid-cols-4 gap-4">
+                    <button
+                      onClick={() => { playButtonSound(); setShowGlobalNotifications(true); setShowMobileMenu(false); }}
+                      className="flex flex-col items-center justify-center aspect-square rounded-[1.5rem] bg-[#1a1a1a] text-zinc-400 active:scale-95 transition-all"
+                    >
+                      <Bell className="w-6 h-6 mb-2 text-zinc-500" />
+                      <span className="text-[9px] font-black uppercase tracking-tight">Alerts</span>
+                      {notificationsUnreadCount > 0 && (
+                        <div className="absolute top-4 right-4 w-2 h-2 bg-amber-500 rounded-full shadow-[0_0_8px_rgba(245,158,11,0.5)]">
+                          <div className="absolute inset-0 bg-amber-500 rounded-full animate-ping opacity-50" />
+                        </div>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => { playButtonSound(); setShowMessageManager(true); setShowMobileMenu(false); }}
+                      className="flex flex-col items-center justify-center aspect-square rounded-[1.5rem] bg-[#1a1a1a] text-zinc-400 active:scale-95 transition-all"
+                    >
+                      <Layers className="w-6 h-6 mb-2 text-zinc-500" />
+                      <span className="text-[9px] font-black uppercase tracking-tight">Stack</span>
+                    </button>
+                    <button
+                      onClick={() => { playButtonSound(); setShowWebhookManager(true); setShowMobileMenu(false); }}
+                      className="flex flex-col items-center justify-center aspect-square rounded-[1.5rem] bg-[#1a1a1a] text-zinc-400 active:scale-95 transition-all"
+                    >
+                      <Settings className="w-6 h-6 mb-2 text-zinc-500" />
+                      <span className="text-[9px] font-black uppercase tracking-tight">Hooks</span>
+                    </button>
+                    <button
+                      onClick={() => { playButtonSound(); setShowJson(true); setShowMobileMenu(false); }}
+                      className="flex flex-col items-center justify-center aspect-square rounded-[1.5rem] bg-[#1a1a1a] text-zinc-400 active:scale-95 transition-all"
+                    >
+                      <FileJson className="w-6 h-6 mb-2 text-zinc-500" />
+                      <span className="text-[9px] font-black uppercase tracking-tight">JSON</span>
+                    </button>
+                    <button
+                      onClick={() => { playButtonSound(); handleClear(); setShowMobileMenu(false); }}
+                      className="flex flex-col items-center justify-center aspect-square rounded-[1.5rem] bg-red-500/10 text-red-500 active:scale-95 transition-all"
+                    >
+                      <Trash2 className="w-6 h-6 mb-2" />
+                      <span className="text-[9px] font-black uppercase tracking-tight">Reset</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Global Notifications Sheet */}
+      <AnimatePresence>
+        {showGlobalNotifications && (
+          <NotificationCenter 
+            variant="default"
+            forceOpen={true}
+            onOpenStateChange={(isOpen) => {
+                if (!isOpen) setShowGlobalNotifications(false);
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Message Manager UI */}
+      <AnimatePresence>
+        {showMessageManager && (
+          <MessageStackManager
+            messages={messages}
+            activeMessageIndex={activeMessageIndex}
+            setActiveMessageIndex={setActiveMessageIndex}
+            addNewMessage={addNewMessage}
+            removeMessage={removeMessage}
+            handleSend={handleSend}
+            isSending={isSending}
+            editMessageUrl={editMessageUrl}
+            setEditMessageUrl={setEditMessageUrl}
+            handleLoadMessage={handleLoadMessage}
+            setShowDeleteMessageConfirm={setShowDeleteMessageConfirm}
+            setShowMessageManager={setShowMessageManager}
+            stackSelectMode={stackSelectMode}
+            setStackSelectMode={setStackSelectMode}
+            selectedMessages={selectedMessages}
+            setSelectedMessages={setSelectedMessages}
+            setMessages={setMessages}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Text Options Modal */}
       {showTextOptionsModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 sm:p-4">
           <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-[#121212] rounded-xl shadow-2xl w-full max-w-md flex flex-col border border-[#333]"
+            initial={{ opacity: 0, scale: 0.98, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.98, y: 20 }}
+            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+            drag="y"
+            dragConstraints={{ top: 0, bottom: 0 }}
+            dragElastic={0.1}
+            onDragEnd={(_, info) => {
+                if (info.offset.y > 100) {
+                    setShowTextOptionsModal(false);
+                }
+            }}
+            className="bg-[#121212] sm:rounded-xl shadow-2xl w-full h-full sm:h-auto sm:max-w-md flex flex-col border-white/5 sm:border-[#333]"
           >
-            <div className="flex items-center justify-between p-4 border-b border-[#333]">
-              <h3 className="font-bold text-lg flex items-center gap-2 text-white"><Type className="w-5 h-5" /> Text Options</h3>
+            <div className="flex items-center justify-between p-4 border-b border-white/5 sm:border-[#333]">
+              <div className="flex flex-col">
+                <h3 className="font-bold text-lg flex items-center gap-2 text-white"><Type className="w-5 h-5" /> Text Options</h3>
+                <p className="text-[10px] text-zinc-500 sm:hidden">Drag down to close</p>
+              </div>
               <button onClick={() => { playButtonSound(); setShowTextOptionsModal(false); }} className="p-1.5 hover:bg-[#222] text-zinc-400 hover:text-white rounded-md transition-colors">
                 <span className="sr-only">Close</span>
                 <X className="w-5 h-5" />
@@ -1214,24 +1643,24 @@ function App() {
                     <h4 className="font-medium text-white">Translate To</h4>
                     <p className="text-xs text-zinc-400">Select a language to translate your message to.</p>
                 </div>
-                <select 
+                <CustomDropdown
                     value={translateTo}
-                    onChange={(e) => setTranslateTo(e.target.value)}
-                    className="w-full bg-[#0a0a0a] border border-[#333] rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-colors"
-                >
-                    <option value="en">English</option>
-                    <option value="es">Spanish</option>
-                    <option value="fr">French</option>
-                    <option value="de">German</option>
-                    <option value="it">Italian</option>
-                    <option value="pt">Portuguese</option>
-                    <option value="ru">Russian</option>
-                    <option value="ja">Japanese</option>
-                    <option value="ko">Korean</option>
-                    <option value="zh">Chinese (Simplified)</option>
-                    <option value="hi">Hindi</option>
-                    <option value="ar">Arabic</option>
-                </select>
+                    onChange={(val) => setTranslateTo(val)}
+                    options={[
+                        { value: "en", label: "English" },
+                        { value: "es", label: "Spanish" },
+                        { value: "fr", label: "French" },
+                        { value: "de", label: "German" },
+                        { value: "it", label: "Italian" },
+                        { value: "pt", label: "Portuguese" },
+                        { value: "ru", label: "Russian" },
+                        { value: "ja", label: "Japanese" },
+                        { value: "ko", label: "Korean" },
+                        { value: "zh", label: "Chinese (Simplified)" },
+                        { value: "hi", label: "Hindi" },
+                        { value: "ar", label: "Arabic" }
+                    ]}
+                />
               </div>
 
               {/* Auto Correct */}
@@ -1266,14 +1695,27 @@ function App() {
 
       {/* JSON Modal */}
       {showJson && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 sm:p-4">
           <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-[#121212] rounded-xl shadow-2xl w-full max-w-4xl h-[80vh] flex flex-col border border-[#333]"
+            initial={{ opacity: 0, scale: 0.98, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.98, y: 20 }}
+            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+            drag="y"
+            dragConstraints={{ top: 0, bottom: 0 }}
+            dragElastic={0.1}
+            onDragEnd={(_, info) => {
+                if (info.offset.y > 100) {
+                    setShowJson(false);
+                }
+            }}
+            className="bg-[#121212] sm:rounded-xl shadow-2xl w-full h-full sm:h-[80vh] sm:max-w-4xl flex flex-col border-white/5 sm:border-[#333]"
           >
-            <div className="flex items-center justify-between p-4 border-b border-[#333]">
-              <h3 className="font-bold text-lg text-white">JSON Editor</h3>
+            <div className="flex items-center justify-between p-4 border-b border-white/5 sm:border-[#333]">
+              <div className="flex flex-col">
+                <h3 className="font-bold text-lg text-white">JSON Editor</h3>
+                <p className="text-[10px] text-zinc-500 sm:hidden">Drag down to close</p>
+              </div>
               <div className="flex items-center gap-2">
                 <button
                   onClick={copyJson}
@@ -1328,14 +1770,27 @@ function App() {
 
       {/* Webhook Settings Modal */}
       {showWebhookManager && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 sm:p-4">
           <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-[#121212] rounded-xl shadow-2xl w-full max-w-lg flex flex-col border border-[#333]"
+            initial={{ opacity: 0, scale: 0.98, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.98, y: 20 }}
+            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+            drag="y"
+            dragConstraints={{ top: 0, bottom: 0 }}
+            dragElastic={0.1}
+            onDragEnd={(_, info) => {
+                if (info.offset.y > 100) {
+                    setShowWebhookManager(false);
+                }
+            }}
+            className="bg-[#121212] sm:rounded-xl shadow-2xl w-full h-full sm:h-auto sm:max-w-lg flex flex-col border-white/5 sm:border-[#333]"
           >
-            <div className="flex items-center justify-between p-4 border-b border-[#333]">
-              <h3 className="font-bold text-lg text-white">Webhook Settings</h3>
+            <div className="flex items-center justify-between p-4 border-b border-white/5 sm:border-[#333]">
+              <div className="flex flex-col">
+                <h3 className="font-bold text-lg text-white">Webhook Settings</h3>
+                <p className="text-[10px] text-zinc-500 sm:hidden">Drag down to close</p>
+              </div>
               <button onClick={() => setShowWebhookManager(false)} className="p-1.5 text-zinc-400 hover:text-white hover:bg-[#222] rounded-md transition-colors">
                 <span className="sr-only">Close</span>
                 <X className="w-5 h-5" />
@@ -1346,100 +1801,95 @@ function App() {
                 Configure your Discord Webhook URL. You can save multiple webhooks as "Server Channels" to easily switch between them.
               </p>
               
-              <div className="space-y-2 bg-[#0a0a0a] p-3 rounded-lg border border-[#333]">
-                <label className="text-xs font-bold uppercase text-zinc-500">Select Server Channel</label>
-                <select
-                  className="w-full bg-[#121212] border border-[#333] rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500 transition-colors"
-                  onChange={(e) => {
-                    if (e.target.value) {
-                      const selected = savedWebhooks.find(wh => wh.url === e.target.value);
-                      if (selected) {
-                        setWebhookUrl(selected.url);
-                        setChannelName(selected.name);
-                        toast.success(`Channel changed to #${selected.name}`);
-                        addLog(`Switched to channel: #${selected.name}`, 'info');
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase text-zinc-500">Select A Targeted Channel:</label>
+                  <CustomDropdown
+                    value={savedWebhooks.some(wh => wh.url === webhookUrl) ? webhookUrl : ""}
+                    onChange={(val) => {
+                      if (val) {
+                        const selected = savedWebhooks.find(wh => wh.url === val);
+                        if (selected) {
+                          setWebhookUrl(selected.url);
+                          setChannelName(selected.name);
+                          toast.success(`Channel changed to #${selected.name}`);
+                          addLog(`Switched to channel: #${selected.name}`, 'info');
+                        }
+                      } else {
+                        setWebhookUrl('');
                       }
-                    } else {
-                      setWebhookUrl('');
-                      setChannelName('general');
-                    }
-                  }}
-                  value={savedWebhooks.some(wh => wh.url === webhookUrl) ? webhookUrl : ""}
-                >
-                  <option value="">-- Custom / New Webhook --</option>
-                  {savedWebhooks.map((wh, idx) => (
-                    <option key={idx} value={wh.url}>#{wh.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-xs font-bold uppercase text-zinc-500">Target Webhook URL</label>
-                <input 
-                  value={webhookUrl}
-                  onChange={(e) => setWebhookUrl(e.target.value)}
-                  className="w-full bg-[#0a0a0a] border border-[#333] rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500 transition-colors"
-                  placeholder="https://discord.com/api/webhooks/..."
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-xs font-bold uppercase text-zinc-500">Channel Name (for Preview & Saving)</label>
-                <div className="flex items-center gap-2 bg-[#0a0a0a] border border-[#333] rounded-md px-3 py-2 focus-within:border-cyan-500 transition-colors">
-                    <span className="text-zinc-500 text-sm">#</span>
-                    <input 
-                      value={channelName}
-                      onChange={(e) => setChannelName(e.target.value)}
-                      className="flex-1 bg-transparent text-sm text-white focus:outline-none"
-                      placeholder="general"
-                    />
+                    }}
+                    options={[
+                      { value: "", label: "-- Custom / New Webhook --" },
+                      ...savedWebhooks.map(wh => ({ value: wh.url, label: `#${wh.name}` }))
+                    ]}
+                  />
                 </div>
-              </div>
-              
-              <div className="border-t border-[#333] pt-4">
-                <div className="flex justify-between items-center mb-2">
-                  <h4 className="text-sm font-bold text-white">Manage Channels</h4>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase text-zinc-500">Targeted Webhook URL:</label>
+                  <input 
+                    value={webhookUrl}
+                    onChange={(e) => setWebhookUrl(e.target.value)}
+                    className="w-full bg-[#0a0a0a] border border-[#333] rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500 transition-colors"
+                    placeholder="https://discord.com/api/webhooks/..."
+                  />
+                </div>
+
+                <div className="pt-2">
                   <button 
                     onClick={() => {
-                      if (channelName && webhookUrl) {
+                      if (webhookUrl) {
                         if (savedWebhooks.some(wh => wh.url === webhookUrl)) {
                           toast.error("This webhook URL is already saved.");
                           return;
                         }
-                        setSavedWebhooks([...savedWebhooks, { name: channelName, url: webhookUrl }]);
-                        toast.success(`Channel #${channelName} saved!`);
-                        addLog(`Saved new channel: #${channelName}`, 'success');
+                        const name = prompt("Enter a channel name (e.g. general):") || "general";
+                        setSavedWebhooks([...savedWebhooks, { name, url: webhookUrl }]);
+                        setChannelName(name);
+                        toast.success(`Webhook saved as #${name}!`);
+                        addLog(`Saved new channel: #${name}`, 'success');
                       } else {
-                        toast.error("Enter a channel name and ensure URL is set.");
+                        toast.error("Ensure Target Webhook URL is set.");
                       }
                     }}
-                    className="px-3 py-1.5 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 text-xs font-bold rounded-md transition-colors flex items-center gap-1"
+                    className="w-full py-2 bg-[#222] hover:bg-[#333] text-white text-sm font-bold rounded-md transition-colors flex items-center justify-center gap-2 border border-white/5"
                   >
-                    <Plus className="w-3 h-3" /> Save Current
+                    <Plus className="w-4 h-4" /> Save Current Webhook
                   </button>
                 </div>
                 
-                {savedWebhooks.length === 0 && (
-                  <p className="text-xs text-zinc-500 italic bg-[#0a0a0a] p-3 rounded-md border border-[#333]">No channels saved yet. Configure a webhook URL and save it.</p>
-                )}
-                <div className="space-y-2 max-h-[150px] overflow-y-auto custom-scrollbar">
-                  {savedWebhooks.map((wh, idx) => (
-                    <div key={idx} className="flex items-center justify-between bg-[#0a0a0a] p-2 rounded-md border border-[#333] group">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-cyan-500" />
-                        <span className="text-sm font-medium text-white truncate max-w-[200px]">#{wh.name}</span>
-                      </div>
-                      <button 
-                        onClick={() => { playDeleteSound(); setSavedWebhooks(savedWebhooks.filter((_, i) => i !== idx)); }}
-                        className="text-zinc-500 hover:text-red-400 p-1 rounded hover:bg-[#222] opacity-0 group-hover:opacity-100 transition-all"
-                        title="Delete Channel"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                {savedWebhooks.length > 0 && (
+                  <div className="pt-4 border-t border-[#333]">
+                    <h4 className="text-xs font-bold uppercase text-zinc-500 mb-2">Saved Webhooks</h4>
+                    <div className="space-y-2 max-h-[150px] overflow-y-auto custom-scrollbar">
+                      {savedWebhooks.map((wh, idx) => (
+                        <div key={idx} className="flex items-center justify-between bg-[#0a0a0a] p-2 rounded-md border border-[#333] group">
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-sm font-bold text-white truncate">#{wh.name}</span>
+                            <span className="text-[10px] text-zinc-500 truncate">{wh.url}</span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setSavedWebhooks(savedWebhooks.filter((_, i) => i !== idx));
+                              if (webhookUrl === wh.url) {
+                                setWebhookUrl('');
+                              }
+                              toast.success(`Removed #${wh.name}`);
+                            }}
+                            className="p-1.5 text-zinc-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all rounded-md hover:bg-white/5 shrink-0 ml-2"
+                            title="Remove Channel"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-                <div className="mt-4 pt-4 border-t border-[#333]">
+                  </div>
+                )}
+              </div>
+              
+              <div className="mt-4 pt-4 border-t border-[#333]">
                   <button
                     onClick={() => { playButtonSound(); setShowDeleteWebhookConfirm(true); }}
                     disabled={!webhookUrl}
@@ -1448,7 +1898,6 @@ function App() {
                     <Trash2 className="w-4 h-4" /> Delete Webhook from Discord
                   </button>
                 </div>
-              </div>
             </div>
           </motion.div>
         </div>
@@ -1456,7 +1905,7 @@ function App() {
 
       {/* Clear Confirm Modal */}
       {showClearConfirm && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 p-4">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -1508,7 +1957,7 @@ function App() {
 
       {/* Delete Webhook Confirm Modal */}
       {showDeleteWebhookConfirm && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 p-4">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -1541,7 +1990,7 @@ function App() {
 
       {/* Delete Message Confirm Modal */}
       {showDeleteMessageConfirm && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 p-4">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -1572,53 +2021,28 @@ function App() {
         </div>
       )}
 
-      {/* Mobile Warning Modal */}
-      {showMobileWarning && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-[#121212] rounded-2xl shadow-2xl w-full max-w-sm flex flex-col overflow-hidden border border-[#333]"
-          >
-            <div className="p-6 text-center space-y-4">
-              <div className="w-16 h-16 rounded-full bg-amber-500/10 flex items-center justify-center mx-auto mb-2 border border-amber-500/20">
-                <Layout className="w-8 h-8 text-amber-500" />
-              </div>
-              <h3 className="font-bold text-xl text-white">Mobile Experience</h3>
-              <p className="text-sm text-zinc-400">
-                This Tool is Not Quite Comfortable with mobile. Do you really want to use it in mobile?
-              </p>
-            </div>
-            <div className="p-4 bg-[#0a0a0a] border-t border-[#333] flex flex-col gap-2">
-              <button 
-                onClick={() => { playButtonSound(); setShowMobileWarning(false); }}
-                className="w-full py-3 bg-cyan-500 hover:bg-cyan-400 text-white rounded-xl font-bold transition-all shadow-[0_0_15px_rgba(6,182,212,0.3)]"
-              >
-                Yes
-              </button>
-              <button 
-                onClick={() => { 
-                  playButtonSound(); 
-                  const viewport = document.querySelector("meta[name=viewport]");
-                  if (viewport) {
-                    viewport.setAttribute("content", "width=1024");
-                  }
-                  setShowMobileWarning(false);
-                  toast.info("Attempted to force desktop mode. You may need to use your browser's 'Request Desktop Site' feature.");
-                }}
-                className="w-full py-3 bg-[#222] hover:bg-[#333] text-zinc-300 hover:text-white border border-[#333] rounded-xl font-bold transition-colors"
-              >
-                Go to desktop mode
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
+      {/* Mobile Experience Screen */}
+      <AnimatePresence>
+        {showMobileWarning && (
+          <MobileExperience 
+            onAccept={() => { playButtonSound(); setShowMobileWarning(false); }}
+            onForcedDesktop={() => { 
+                playButtonSound(); 
+                const viewport = document.querySelector("meta[name=viewport]");
+                if (viewport) {
+                  viewport.setAttribute("content", "width=1024");
+                }
+                setShowMobileWarning(false);
+                toast.info("Attempted to force desktop mode. You may need to use your browser's 'Request Desktop Site' feature.");
+            }}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Limit Exceeded Modal */}
       <AnimatePresence>
         {showLimitModal && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 p-4">
             <motion.div 
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -1739,6 +2163,22 @@ function App() {
           </div>
         )}
       </AnimatePresence>
+
+      <AnimatePresence>
+        {showIntro && (
+          <CinematicIntro onComplete={() => setShowIntro(false)} />
+        )}
+      </AnimatePresence>
+
+      <VirtualKeyboard />
+
+      <TemplateCreator
+        isOpen={showTemplateCreator}
+        onClose={() => setShowTemplateCreator(false)}
+        currentEditorMessage={message}
+        onUpdateEditorMessage={setMessage}
+        onSwitchTab={setActiveTab}
+      />
 
       <style>{`
         .custom-scrollbar::-webkit-scrollbar {

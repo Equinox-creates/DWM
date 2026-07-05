@@ -1,7 +1,7 @@
 import React from 'react';
 import { cn, isValidUrl } from '@/utils';
 import { DiscordWebhookMessage, DiscordEmbed } from '@/types';
-import { Bot } from 'lucide-react';
+import { Hash } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -9,9 +9,11 @@ interface PreviewProps {
   message: DiscordWebhookMessage;
   webhookData?: { name?: string, avatar?: string } | null;
   darkMode?: boolean;
+  previewType?: 'default' | 'chat';
+  channelName?: string;
 }
 
-const MarkdownRenderer = ({ content, className, darkMode = true }: { content: string, className?: string, darkMode?: boolean }) => {
+const MarkdownRenderer = React.memo(({ content, className, darkMode = true }: { content: string, className?: string, darkMode?: boolean }) => {
   return (
     <div className={cn("markdown-body", className)}>
       <ReactMarkdown
@@ -56,26 +58,198 @@ const MarkdownRenderer = ({ content, className, darkMode = true }: { content: st
       </ReactMarkdown>
     </div>
   );
-};
+});
 
-export const MessagePreview: React.FC<PreviewProps> = ({ message, webhookData, darkMode = true }) => {
+export const MessagePreview: React.FC<PreviewProps> = React.memo(({ message, webhookData, darkMode = true, previewType = 'default', channelName = 'general' }) => {
+  const [viewMode, setViewMode] = React.useState<'forum' | 'thread'>(message.forum_mode ? 'forum' : 'thread');
+  const [randomBg, setRandomBg] = React.useState('#5865F2');
+
+  React.useEffect(() => {
+    const colors = ['#EB459E', '#ED4245', '#57F187', '#5865F2']; // pink, red, green, blue
+    setRandomBg(colors[Math.floor(Math.random() * colors.length)]);
+  }, [message]);
+  
+  React.useEffect(() => {
+    if (!message.forum_mode && viewMode !== 'thread') {
+      setViewMode('thread');
+    }
+  }, [message.forum_mode, viewMode]);
+
   const username = message.username || webhookData?.name || "Spidey Bot";
   const avatarUrl = message.avatar_url || webhookData?.avatar || "https://cdn.discordapp.com/embed/avatars/0.png";
+
+  // Use Discord blue for default, random for chat
+  // The user requested: blue for live preview (desktop/mobile message view), random for chat preview
+  const avatarBgColor = previewType === 'chat' ? randomBg : '#5865F2';
+
+  if (previewType === 'chat') {
+    return (
+        <div className={cn(
+            "h-full flex flex-col font-sans",
+            darkMode ? 'bg-[#313338] text-gray-100' : 'bg-white text-[#313338]'
+        )}>
+            <div className="flex-1 p-4 space-y-6 overflow-y-auto">
+                 {/* Mock User Message (if not logged in) */}
+                <div className="flex items-start gap-4 hover:bg-white/[0.02] p-1 -m-1 rounded-sm transition-colors">
+                    <div 
+                        className="w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center transition-colors shadow-lg"
+                        style={{ backgroundColor: randomBg }}
+                    >
+                        <DiscordLogo />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                            <span className={cn("font-bold text-sm hover:underline cursor-pointer", darkMode ? 'text-white' : 'text-black')}>User</span>
+                            <span className="text-[10px] text-zinc-500 font-medium">Today at {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                        <p className={cn("text-sm mt-0.5 leading-normal", darkMode ? 'text-[#dbdee1]' : 'text-zinc-700')}>
+                            Hey! I'm creating this awesome webhook with DWM Studio. Check it out below!
+                        </p>
+                    </div>
+                </div>
+
+                {/* Webhook Message */}
+                <div className="flex items-start gap-4 hover:bg-white/[0.02] p-1 -m-1 rounded-sm transition-colors relative">
+                    <div className="flex-shrink-0 mt-0.5">
+                        {isValidUrl(avatarUrl) && !avatarUrl.includes('embed/avatars') ? (
+                            <img src={avatarUrl} alt="Avatar" className="w-10 h-10 rounded-full object-cover shadow-lg" referrerPolicy="no-referrer" />
+                        ) : (
+                            <div 
+                                className="w-10 h-10 rounded-full flex items-center justify-center shadow-lg"
+                                style={{ backgroundColor: avatarBgColor }}
+                            >
+                                <DiscordLogo />
+                            </div>
+                        )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                            <span className={cn("font-bold text-sm", darkMode ? 'text-white' : 'text-black')}>{username}</span>
+                            <span className="bg-[#5865F2] text-white text-[10px] px-1 rounded-[3px] font-bold h-[14px] flex items-center">BOT</span>
+                            <span className="text-[10px] text-zinc-500">Today at {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                        
+                        <div className="mt-1 space-y-2">
+                            {message.content && (
+                                <div className="text-sm leading-relaxed">
+                                    <MarkdownRenderer content={message.content} darkMode={darkMode} />
+                                </div>
+                            )}
+                            {message.embeds && message.embeds.map((embed, i) => (
+                                <EmbedPreview key={i} embed={embed} darkMode={darkMode} />
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            {/* Discord Input Bar Mock */}
+            <div className={cn(
+                "p-4 border-t",
+                darkMode ? 'bg-[#313338] border-white/5' : 'bg-zinc-50 border-zinc-200'
+            )}>
+                <div className={cn(
+                    "w-full h-11 rounded-lg flex items-center px-4 gap-3",
+                    darkMode ? 'bg-[#383a40]' : 'bg-zinc-200'
+                )}>
+                    <div className="w-6 h-6 rounded-full bg-zinc-500/20 flex items-center justify-center text-zinc-400 font-bold">+</div>
+                    <div className="text-sm text-zinc-500">Message #{channelName || 'general'}</div>
+                </div>
+            </div>
+        </div>
+    );
+  }
+
+  if (message.forum_mode && viewMode === 'forum') {
+    return (
+      <div className={cn(
+        "flex flex-col gap-3 p-4 rounded-lg border transition-all cursor-pointer group",
+        darkMode ? 'bg-[#2B2D31] border-[#1e1f22] hover:border-[#383A40]' : 'bg-[#ffffff] border-[#e3e5e8] hover:border-[#c9ccd1]'
+      )} onClick={() => setViewMode('thread')}>
+        <div className="flex justify-between gap-4">
+          <div className="flex-1 min-w-0 flex flex-col gap-1">
+            <div className="flex items-center gap-2 mb-1">
+              {message.applied_tags && message.applied_tags.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {message.applied_tags.map(tag => (
+                    <span key={tag} className="px-1.5 py-0.5 rounded-full bg-[#4f545c]/20 text-[#b5bac1] text-[10px] font-bold uppercase tracking-wider border border-[#4f545c]/30">
+                      Tag: {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+            <h3 className={cn("text-lg font-black leading-tight truncate", darkMode ? 'text-white' : 'text-[#060607]')}>
+              {message.thread_name || "Untitled Post"}
+            </h3>
+            <div className={cn("text-sm line-clamp-3 opacity-80", darkMode ? 'text-[#dbdee1]' : 'text-[#313338]')}>
+              {message.content || (message.embeds?.[0]?.description) || "No content provided."}
+            </div>
+          </div>
+          {message.forum_thumbnail_url && (
+            <div className="w-24 h-24 rounded-lg overflow-hidden shrink-0 border border-white/5 shadow-xl">
+              <img src={message.forum_thumbnail_url} alt="Thumbnail" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+            </div>
+          )}
+        </div>
+        
+        <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/5">
+          <div className="flex items-center gap-2">
+            <div 
+              className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 shadow-lg"
+              style={{ backgroundColor: avatarBgColor }}
+            >
+                {username.charAt(0)}
+            </div>
+            <span className="text-[11px] font-bold text-[#80848E]">{username}</span>
+            <span className="text-[11px] text-[#80848E]">• Just now</span>
+          </div>
+          <div className="flex items-center gap-2 text-cyan-400 font-bold text-[10px] uppercase tracking-widest">
+            Open Post
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`${darkMode ? 'bg-[#313338] text-gray-100' : 'bg-[#ffffff] text-[#313338]'} font-sans p-4 rounded-md shadow-sm w-full h-full overflow-y-auto transition-colors`}>
+      {message.forum_mode && (
+        <div className="mb-4 -mx-4 -mt-4 p-3 bg-[#1e1f22] border-b border-[#111214] flex items-center justify-between shadow-lg">
+          <div className="flex items-center gap-3">
+             <button 
+                onClick={() => setViewMode('forum')}
+                className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider"
+             >
+                <div className="bg-cyan-500/20 p-1 rounded">
+                  <Hash className="w-3.5 h-3.5" />
+                </div>
+                Back to Forum
+             </button>
+             <div className="h-4 w-px bg-white/10 mx-1" />
+             <span className="text-white font-bold text-sm truncate max-w-[150px]">{message.thread_name || "Post"}</span>
+          </div>
+          <div className="flex items-center gap-2">
+              <div className="px-2 py-0.5 rounded bg-zinc-800 text-[10px] font-bold text-zinc-500 uppercase">Thread View</div>
+          </div>
+        </div>
+      )}
       <div className={`flex items-start gap-4 group ${darkMode ? 'hover:bg-[#2e3035]' : 'hover:bg-[#f2f3f5]'} -mx-4 px-4 py-2 transition-colors`}>
         {/* Avatar */}
         <div className="flex-shrink-0 mt-0.5 cursor-pointer">
-          {isValidUrl(avatarUrl) ? (
+          {isValidUrl(avatarUrl) && !avatarUrl.includes('embed/avatars') ? (
             <img
               src={avatarUrl}
               alt="Avatar"
-              className="w-10 h-10 rounded-full object-cover hover:opacity-80 transition-opacity"
+              className="w-10 h-10 rounded-full object-cover hover:opacity-80 transition-opacity ring-2 ring-transparent active:ring-cyan-500/50"
               referrerPolicy="no-referrer"
             />
           ) : (
-            <div className="w-10 h-10 rounded-full bg-[#5865F2] flex items-center justify-center hover:opacity-80 transition-opacity">
-              <Bot className="w-6 h-6 text-white" />
+            <div 
+              className="w-10 h-10 rounded-full flex items-center justify-center hover:opacity-80 transition-opacity shadow-lg"
+              style={{ backgroundColor: avatarBgColor }}
+            >
+              <DiscordLogo />
             </div>
           )}
         </div>
@@ -189,7 +363,13 @@ export const MessagePreview: React.FC<PreviewProps> = ({ message, webhookData, d
       </div>
     </div>
   );
-};
+});
+
+const DiscordLogo = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" className="w-[65%] h-[65%]">
+    <path d="M19.73 4.87c-1.28-.6-2.65-1.03-4.11-1.27-.18.33-.4.69-.53 1.02-1.57-.24-3.13-.24-4.66 0-.14-.33-.35-.69-.53-1.02-1.46.24-2.83.67-4.11 1.27-2.62 3.93-3.33 7.76-2.98 11.54 1.74 1.29 3.43 2.07 5.08 2.58.41-.56.78-1.17 1.09-1.81-.59-.22-1.16-.51-1.7-.86.14-.1.28-.21.41-.32 3.35 1.55 6.98 1.55 10.28 0 .13.11.27.22.41.32-.54.35-1.11.64-1.7.86.31.64.68 1.25 1.09 1.81 1.65-.51 3.34-1.29 5.08-2.58.43-4.42-.72-8.2-2.98-11.54zM8.51 13.91c-.98 0-1.79-.91-1.79-2.03s.79-2.03 1.79-2.03 1.79.91 1.79 2.03-.79 2.03-1.79 2.03zm6.98 0c-.98 0-1.79-.91-1.79-2.03s.79-2.03 1.79-2.03 1.79.91 1.79 2.03-.79 2.03-1.79 2.03z"/>
+  </svg>
+);
 
 const ExternalLinkIcon = ({ className }: { className?: string }) => (
   <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -202,16 +382,16 @@ const EmbedPreview: React.FC<{ embed: DiscordEmbed, darkMode?: boolean }> = ({ e
 
   return (
     <div
-      className={`mt-2 ${darkMode ? 'bg-[#2B2D31]' : 'bg-[#f2f3f5]'} rounded-[4px] border-l-4 grid max-w-[520px] w-full`}
+      className={`mt-2 ${darkMode ? 'bg-[#2B2D31]' : 'bg-[#f2f3f5]'} rounded-[4px] border-l-4 grid max-w-[520px] w-full shadow-sm overflow-hidden`}
       style={{ borderLeftColor: borderColor }}
     >
-      <div className="grid grid-cols-[1fr_auto] p-4 gap-4">
-        <div className="min-w-0 space-y-2">
+      <div className="grid grid-cols-[1fr_auto] p-3 gap-2">
+        <div className="min-w-0 space-y-1">
           {/* Author */}
           {embed.author?.name && (
-            <div className={`flex items-center gap-2 text-sm font-medium ${darkMode ? 'text-white' : 'text-[#060607]'}`}>
+            <div className={`flex items-center gap-2 text-[13px] font-bold ${darkMode ? 'text-white' : 'text-[#313338]'} mb-1`}>
               {isValidUrl(embed.author.icon_url) && (
-                <img src={embed.author.icon_url} alt="" className="w-6 h-6 rounded-full object-cover" referrerPolicy="no-referrer" />
+                <img src={embed.author.icon_url} alt="" className="w-5 h-5 rounded-full object-cover" referrerPolicy="no-referrer" />
               )}
               {embed.author.url ? (
                 <a href={embed.author.url} target="_blank" rel="noreferrer" className="hover:underline truncate">
@@ -225,7 +405,7 @@ const EmbedPreview: React.FC<{ embed: DiscordEmbed, darkMode?: boolean }> = ({ e
 
           {/* Title */}
           {embed.title && (
-            <div className={`text-base font-semibold ${darkMode ? 'text-white' : 'text-[#060607]'} truncate`}>
+            <div className={`text-base font-bold ${darkMode ? 'text-white' : 'text-[#060607]'} leading-tight`}>
               {embed.url ? (
                 <a href={embed.url} target="_blank" rel="noreferrer" className="text-[#00A8FC] hover:underline">
                   {embed.title}
@@ -238,18 +418,18 @@ const EmbedPreview: React.FC<{ embed: DiscordEmbed, darkMode?: boolean }> = ({ e
 
           {/* Description */}
           {embed.description && (
-            <div className={`text-sm ${darkMode ? 'text-[#dbdee1]' : 'text-[#313338]'} whitespace-pre-wrap leading-[1.375rem]`}>
+            <div className={`text-[14px] ${darkMode ? 'text-[#dbdee1]' : 'text-[#313338]'} whitespace-pre-wrap leading-[1.375rem] opacity-90`}>
               <MarkdownRenderer content={embed.description} darkMode={darkMode} />
             </div>
           )}
 
           {/* Fields */}
           {embed.fields && embed.fields.length > 0 && (
-            <div className="grid gap-2 mt-2 grid-cols-12">
+            <div className="grid gap-x-4 gap-y-2 mt-2 grid-cols-12">
               {embed.fields.map((field, i) => (
-                <div key={i} className={cn("col-span-12", field.inline && "sm:col-span-4")}>
-                  <div className={`text-sm font-semibold ${darkMode ? 'text-[#dbdee1]' : 'text-[#313338]'} mb-1`}>{field.name}</div>
-                  <div className={`text-sm ${darkMode ? 'text-[#dbdee1]' : 'text-[#313338]'} whitespace-pre-wrap leading-[1.375rem]`}>
+                <div key={i} className={cn("col-span-12", field.inline && "sm:col-span-12 lg:col-span-4")}>
+                  <div className={`text-[13px] font-bold ${darkMode ? 'text-white' : 'text-[#313338]'} mb-0.5`}>{field.name}</div>
+                  <div className={`text-[14px] ${darkMode ? 'text-[#dbdee1]' : 'text-[#313338]'} whitespace-pre-wrap leading-tight`}>
                     <MarkdownRenderer content={field.value} darkMode={darkMode} />
                   </div>
                 </div>
@@ -264,7 +444,7 @@ const EmbedPreview: React.FC<{ embed: DiscordEmbed, darkMode?: boolean }> = ({ e
             <img
               src={embed.thumbnail!.url}
               alt="Thumbnail"
-              className="max-w-[80px] max-h-[80px] rounded-[4px] object-cover"
+              className="max-w-[48px] max-h-[48px] rounded-[4px] object-cover"
               referrerPolicy="no-referrer"
             />
           </div>
@@ -273,11 +453,11 @@ const EmbedPreview: React.FC<{ embed: DiscordEmbed, darkMode?: boolean }> = ({ e
 
       {/* Image */}
       {isValidUrl(embed.image?.url) && (
-        <div className="px-4 pb-4">
+        <div className="px-3 pb-3">
           <img
             src={embed.image!.url}
             alt="Embed Image"
-            className="max-w-full rounded-[4px] object-cover"
+            className="max-w-full rounded-[4px] object-cover shadow-inner"
             referrerPolicy="no-referrer"
           />
         </div>
@@ -285,17 +465,16 @@ const EmbedPreview: React.FC<{ embed: DiscordEmbed, darkMode?: boolean }> = ({ e
 
       {/* Footer */}
       {(embed.footer?.text || embed.timestamp) && (
-        <div className={`px-4 pb-4 pt-0 flex items-center gap-2 text-xs ${darkMode ? 'text-[#949BA4]' : 'text-[#5c5e66]'}`}>
+        <div className={`px-3 pb-3 pt-0 flex items-center gap-2 text-[11px] font-medium ${darkMode ? 'text-[#949BA4]' : 'text-[#5c5e66]'}`}>
           {isValidUrl(embed.footer?.icon_url) && (
-            <img src={embed.footer!.icon_url} alt="" className="w-5 h-5 rounded-full object-cover" referrerPolicy="no-referrer" />
+            <img src={embed.footer!.icon_url} alt="" className="w-4 h-4 rounded-full object-cover" referrerPolicy="no-referrer" />
           )}
-          <span>
+          <span className="opacity-80">
             {embed.footer?.text}
             {embed.footer?.text && embed.timestamp && " • "}
             {embed.timestamp && (
               <span>
-                {/* Simple formatting for preview */}
-                {new Date(embed.timestamp).toLocaleDateString()} at {new Date(embed.timestamp).toLocaleTimeString()}
+                {new Date(embed.timestamp).toLocaleDateString()} at {new Date(embed.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
             )}
           </span>
